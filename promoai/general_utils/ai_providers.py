@@ -12,6 +12,7 @@ class AIProviders(Enum):
     COHERE = "Cohere"
     GROK = "Grok"
     AZURE = "Azure"
+    OLLAMA = "Ollama (Local)"
 
 
 AI_MODEL_DEFAULTS = {
@@ -25,6 +26,7 @@ AI_MODEL_DEFAULTS = {
     AIProviders.COHERE.value: "command-r-plus-08-2024",
     AIProviders.GROK.value: "grok-3",
     AIProviders.AZURE.value: "very-secret-llm",
+    AIProviders.OLLAMA.value: "qwen3.5:4b",
 }
 
 DEFAULT_AI_PROVIDER = AIProviders.GOOGLE.value
@@ -40,6 +42,7 @@ AI_HELP_DEFAULTS = {
     AIProviders.COHERE.value: "Enter a Cohere model name. You can get a Cohere API key and check the latest models under: https://cohere.com/docs/models. They further provide free trial keys.",
     AIProviders.GROK.value: "Enter a Grok model name. You can get a Grok API key and check the latest models under: https://x.ai/api.",
     AIProviders.AZURE.value: "Enter your Azure OpenAI API key, resource endpoint URL, deployment name, and API version.",
+    AIProviders.OLLAMA.value: "Run a model locally through Ollama. No API key is required. The default Docker setup provides qwen3.5:4b.",
 }
 
 MAIN_HELP = (
@@ -50,4 +53,5 @@ MAIN_HELP = (
     " DeepSeek, Anthropic, Mistral AI, Grok, and Cohere."
     " OpenRouter is a platform that allows you to access various models from different providers."
     " For some of them, you may have free access, but you may need to sign up for an account."
+    " Ollama runs models locally and does not require an API key."
 )

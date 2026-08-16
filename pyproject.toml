@@ -22,6 +22,9 @@ classifiers = [
 ]
 dynamic = ["version", "dependencies"]
 
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
+
 [project.urls]
 "Repository" = "https://github.com/fit-process-mining/ProMoAI"
 

@@ -49,6 +49,33 @@ Access the unified suite directly at: [https://promoai.streamlit.app/](https://p
   streamlit run promoai_standalone.py
   ```
 
+### With Docker and a local LLM
+
+The complete application can run with a local `qwen3.5:4b` model served by
+Ollama. No API key is required for this provider.
+
+```bash
+docker compose up --build
+```
+
+Open [http://localhost:8501](http://localhost:8501), select
+`Ollama (Local)` in the AI configuration, and save the configuration. The first
+startup waits for Ollama to download the model (approximately 3.4 GB), so it can
+take several minutes depending on the connection. Later startups reuse the
+model stored in the `ollama-data` Docker volume.
+
+Stop the application with `Ctrl+C` or `docker compose down`. To also remove the
+downloaded model, run:
+
+```bash
+docker compose down -v
+```
+
+Ollama is only available to the application on the internal Compose network;
+port `11434` is not exposed to the host. When running Ollama outside Docker, the
+application defaults to `http://localhost:11434/v1`. This can be overridden with
+the `OLLAMA_BASE_URL` environment variable.
+
 ### Installation as Python Library:
 
 You can install the core ProMoAI components via pip:

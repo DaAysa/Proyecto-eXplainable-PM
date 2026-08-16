@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import re
 from pathlib import Path
 
@@ -538,11 +539,16 @@ def query_llm(
             api_url = "https://openrouter.ai/api/v1"
         elif ai_provider == AIProviders.GROK.value:
             api_url = "https://api.x.ai/v1"
+        elif ai_provider == AIProviders.OLLAMA.value:
+            api_url = os.getenv(
+                "OLLAMA_BASE_URL", "http://localhost:11434/v1"
+            ).strip()
+            api_key = api_key or "ollama"
         else:
             raise UnsupportedProviderError(
                 _user_message("unsupported"), retryable=False
             )
-        llm_args_to_pass = llm_args.copy()
+        llm_args_to_pass = (llm_args or {}).copy()
         llm_args_to_pass.pop("END_POINT", None)
 
         return generate_response_with_history(

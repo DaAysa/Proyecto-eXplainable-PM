@@ -20,7 +20,7 @@ def run_page():
         st.session_state["model_name"] = AI_MODEL_DEFAULTS[st.session_state["provider"]]
 
     # UI Elements
-    st.write("### 🔑 API Configuration")
+    st.write("### 🤖 AI Configuration")
     st.markdown('<div class="api-config-marker"></div>', unsafe_allow_html=True)
 
     with st.container(border=True):
@@ -32,17 +32,28 @@ def run_page():
             help=MAIN_HELP,
         )
 
-        col1, col2 = st.columns(2)
-        with col1:
+        is_ollama = provider == AIProviders.OLLAMA.value
+        api_key = ""
+
+        if is_ollama:
             ai_model_name = st.text_input(
                 "Model Name",
                 key="model_name",
                 help=AI_HELP_DEFAULTS.get(st.session_state["provider"], ""),
             )
-        with col2:
-            api_key = st.text_input(
-                "API Key", type="password", placeholder="my-precious-api-key"
-            )
+            st.caption("Ollama runs locally; no API key is required.")
+        else:
+            col1, col2 = st.columns(2)
+            with col1:
+                ai_model_name = st.text_input(
+                    "Model Name",
+                    key="model_name",
+                    help=AI_HELP_DEFAULTS.get(st.session_state["provider"], ""),
+                )
+            with col2:
+                api_key = st.text_input(
+                    "API Key", type="password", placeholder="my-precious-api-key"
+                )
         azure_endpoint = None
 
         if provider == AIProviders.AZURE.value:
@@ -52,12 +63,18 @@ def run_page():
                 placeholder="https://your-resource.openai.azure.com/",
             )
         if st.button("Save Credentials", type="primary", use_container_width=True):
-            if not api_key:
+            if not ai_model_name.strip():
+                st.error("Please enter a model name.")
+            elif not is_ollama and not api_key:
                 st.error("Please enter an API key.")
             else:
-                args = {"END_POINT": azure_endpoint}
+                args = (
+                    {"END_POINT": azure_endpoint}
+                    if provider == AIProviders.AZURE.value
+                    else {}
+                )
                 st.session_state["llm_credentials"] = LLMConnection(
-                    api_key=api_key,
+                    api_key="ollama" if is_ollama else api_key,
                     llm_name=ai_model_name,
                     ai_provider=provider,
                     args=args,

@@ -1,0 +1,16 @@
+.git
+.github
+.venv
+__pycache__
+*.py[cod]
+*.egg-info
+.pytest_cache
+.mypy_cache
+.coverage
+build
+dist
+temp
+.env
+.idea
+.vscode
+environment_backup.yml

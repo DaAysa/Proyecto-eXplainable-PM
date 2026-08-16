@@ -17,6 +17,7 @@ from powl.conversion.variants.to_petri_net import apply as convert_to_petri_net
 from promoai.general_utils.ai_providers import (
     AI_HELP_DEFAULTS,
     AI_MODEL_DEFAULTS,
+    AIProviders,
     DEFAULT_AI_PROVIDER,
     MAIN_HELP,
 )
@@ -59,15 +60,27 @@ def run_app():
         ):
             st.session_state["model_name"] = AI_MODEL_DEFAULTS[provider]
 
-        col1, col2 = st.columns(2)
-        with col1:
+        is_ollama = provider == AIProviders.OLLAMA.value
+        api_key = ""
+
+        if is_ollama:
             ai_model_name = st.text_input(
                 "Enter the AI model name:",
                 key="model_name",
                 help=AI_HELP_DEFAULTS[st.session_state["provider"]],
             )
-        with col2:
-            api_key = st.text_input("API key:", type="password")
+            api_key = "ollama"
+            st.caption("Ollama runs locally; no API key is required.")
+        else:
+            col1, col2 = st.columns(2)
+            with col1:
+                ai_model_name = st.text_input(
+                    "Enter the AI model name:",
+                    key="model_name",
+                    help=AI_HELP_DEFAULTS[st.session_state["provider"]],
+                )
+            with col2:
+                api_key = st.text_input("API key:", type="password")
 
     if "selected_mode" not in st.session_state:
         st.session_state["selected_mode"] = "Model Generation"
