@@ -42,6 +42,7 @@ def test_query_llm_uses_ollama_openai_compatible_endpoint():
     call = post.call_args
     assert call.args[0] == "http://ollama:11434/v1/chat/completions"
     assert call.kwargs["headers"]["Authorization"] == "Bearer ollama"
+    assert call.kwargs["timeout"] == (3.05, 600.0)
     assert call.kwargs["json"] == {
         "model": "qwen3.5:4b",
         "messages": conversation,

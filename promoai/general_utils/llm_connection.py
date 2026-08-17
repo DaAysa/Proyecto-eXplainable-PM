@@ -677,9 +677,13 @@ def generate_response_with_history(
         conversation_history=conversation_history,
     )
 
+    read_timeout = float(os.getenv("LLM_READ_TIMEOUT", "120"))
+    if provider_name == AIProviders.OLLAMA.value:
+        read_timeout = float(os.getenv("OLLAMA_READ_TIMEOUT", "600"))
+
     try:
         data = _requests_post(
-            url, headers=headers, json_=payload, timeout_s=(3.05, 120)
+            url, headers=headers, json_=payload, timeout_s=(3.05, read_timeout)
         )
     except Exception as e:
         _persist_llm_response_trace(
