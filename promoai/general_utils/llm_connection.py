@@ -613,7 +613,7 @@ def generate_result_with_error_handling(
     raise Exception(
         llm_name
         + " failed to fix the errors after "
-        + str(max_iterations + 5)
+        + str(max_iterations + additional_iterations)
         + " iterations! This is the error history: "
         + str(error_history)
     )

@@ -150,8 +150,8 @@ def engineer_node(
         ai_provider=LLMCredentials.ai_provider,
         api_key=LLMCredentials.api_key,
         llm_args=effective_llm_args,
-        max_iterations=3,
-        additional_iterations=2,
+        max_iterations=8,
+        additional_iterations=8,
         standard_error_message=ERROR_MESSAGE_CODE_GENERATION_ENG,
     )
     request_index = len(state["user_request"])
@@ -336,8 +336,8 @@ def analyst_node(state: ProcessState, LLMCredentials: LLMConnection) -> ProcessS
             ai_provider=LLMCredentials.ai_provider,
             api_key=LLMCredentials.api_key,
             llm_args=effective_llm_args,
-            max_iterations=3,
-            additional_iterations=2,
+            max_iterations=8,
+            additional_iterations=8,
             standard_error_message=ERROR_MESSAGE_CODE_GENERATION_ANALYST,
         )
         state["sent_artifacts"].extend(
