@@ -1,6 +1,6 @@
 import copy
 from functools import partial
-from typing import List, Tuple
+from typing import Any, Callable, List, Tuple
 
 import pandas as pd
 import pm4py
@@ -107,7 +107,9 @@ def init_state(
 
 
 def engineer_node(
-    state: ProcessState, LLMCredentials: LLMConnection
+    state: ProcessState,
+    LLMCredentials: LLMConnection,
+    progress_callback: Callable[[dict[str, Any]], None] | None = None,
 ) -> Tuple[ProcessState, str, str]:
     # Initial state
     # 1. Construct Prompt
@@ -153,6 +155,7 @@ def engineer_node(
         max_iterations=8,
         additional_iterations=8,
         standard_error_message=ERROR_MESSAGE_CODE_GENERATION_ENG,
+        progress_callback=progress_callback,
     )
     request_index = len(state["user_request"])
     _persist_generated_code(
@@ -234,7 +237,11 @@ def generate_initial_message_for_analyst(state: ProcessState, context) -> str:
     return msg
 
 
-def analyst_node(state: ProcessState, LLMCredentials: LLMConnection) -> ProcessState:
+def analyst_node(
+    state: ProcessState,
+    LLMCredentials: LLMConnection,
+    progress_callback: Callable[[dict[str, Any]], None] | None = None,
+) -> ProcessState:
     artifact_id_to_description_and_content = {}
     artifact_id_to_filepath = {}
     sent_artifacts = state["sent_artifacts"]
@@ -339,6 +346,7 @@ def analyst_node(state: ProcessState, LLMCredentials: LLMConnection) -> ProcessS
             max_iterations=8,
             additional_iterations=8,
             standard_error_message=ERROR_MESSAGE_CODE_GENERATION_ANALYST,
+            progress_callback=progress_callback,
         )
         state["sent_artifacts"].extend(
             list(artifact_id_to_description_and_content.keys())

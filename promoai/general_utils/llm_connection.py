@@ -573,6 +573,7 @@ def generate_result_with_error_handling(
     max_iterations=5,
     additional_iterations=5,
     standard_error_message=ERROR_MESSAGE_FOR_MODEL_GENERATION,
+    progress_callback: Optional[Callable[[dict[str, Any]], None]] = None,
 ) -> tuple[str, any, list[Any]]:
     provider_args, internal_args = _split_llm_args(llm_args)
     trace_session_dir = internal_args.get(
@@ -581,7 +582,17 @@ def generate_result_with_error_handling(
     effective_llm_args = dict(provider_args)
     effective_llm_args["artifact_session_dir"] = trace_session_dir
     error_history = []
-    for iteration in range(max_iterations + additional_iterations):
+    total_iterations = max_iterations + additional_iterations
+    for iteration in range(total_iterations):
+        attempt = iteration + 1
+        if progress_callback:
+            progress_callback(
+                {
+                    "phase": "request_started",
+                    "attempt": attempt,
+                    "total": total_iterations,
+                }
+            )
         response = query_llm(
             conversation,
             api_key,
@@ -590,13 +601,38 @@ def generate_result_with_error_handling(
             effective_llm_args,
         )
         try:
+            if progress_callback:
+                progress_callback(
+                    {
+                        "phase": "validating",
+                        "attempt": attempt,
+                        "total": total_iterations,
+                    }
+                )
             conversation.append({"role": "assistant", "content": response})
             auto_duplicate = iteration >= max_iterations
             code, result = extraction_function(response, auto_duplicate)
+            if progress_callback:
+                progress_callback(
+                    {
+                        "phase": "completed",
+                        "attempt": attempt,
+                        "total": total_iterations,
+                    }
+                )
             return code, result, conversation  # Break loop if execution is successful
         except Exception as e:
             error_description = str(e)
             error_history.append(error_description)
+            if progress_callback:
+                progress_callback(
+                    {
+                        "phase": "attempt_failed",
+                        "attempt": attempt,
+                        "total": total_iterations,
+                        "error": error_description,
+                    }
+                )
             if constants.ENABLE_PRINTS:
                 print("Error detected in iteration " + str(iteration + 1))
                 print("\t" + error_description.replace("\n", " ").replace("\r", " "))

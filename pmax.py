@@ -1,4 +1,5 @@
 import os
+import time
 from io import BytesIO
 from typing import Dict, List, Union
 
@@ -259,12 +260,55 @@ def chat(llm_credentials: LLMConnection):
             st.session_state.agent_state["user_request"].append(prompt)
         assistant_placeholder = st.empty()
 
-        with st.spinner("Processing your request..."):
+        started_at = time.monotonic()
+
+        def progress_handler(agent_name: str):
+            def handle(event):
+                elapsed = int(time.monotonic() - started_at)
+                elapsed_label = f"{elapsed // 60:02d}:{elapsed % 60:02d}"
+                attempt = event.get("attempt")
+                total = event.get("total")
+                phase = event.get("phase")
+
+                if phase == "request_started":
+                    process_status.write(
+                        f"**{agent_name}** · intento {attempt}/{total} · "
+                        f"esperando respuesta del modelo · `{elapsed_label}`"
+                    )
+                elif phase == "validating":
+                    process_status.write(
+                        f"**{agent_name}** · validando y ejecutando la respuesta · "
+                        f"`{elapsed_label}`"
+                    )
+                elif phase == "attempt_failed":
+                    error = str(event.get("error", "Error desconocido"))
+                    short_error = error.replace("\n", " ")[:180]
+                    process_status.write(
+                        f"**{agent_name}** · el intento {attempt} requiere corrección: "
+                        f"{short_error} · `{elapsed_label}`"
+                    )
+                elif phase == "completed":
+                    process_status.write(
+                        f"**{agent_name}** · completado en el intento {attempt} · "
+                        f"`{elapsed_label}`"
+                    )
+
+            return handle
+
+        with st.status("Procesando la consulta...", expanded=True) as process_status:
+            process_status.write("**Preparación** · registro y contexto listos")
             try:
                 st.session_state.agent_state, _, code = engineer_node(
-                    st.session_state.agent_state, llm_credentials
+                    st.session_state.agent_state,
+                    llm_credentials,
+                    progress_callback=progress_handler("Engineer"),
                 )
             except Exception as e:
+                process_status.update(
+                    label="El Engineer no pudo completar el análisis",
+                    state="error",
+                    expanded=True,
+                )
                 st.error(f"Error during calling the Engineer: {e}")
                 return
 
@@ -287,13 +331,26 @@ def chat(llm_credentials: LLMConnection):
 
             try:
                 updated_state = analyst_node(
-                    st.session_state.agent_state, llm_credentials
+                    st.session_state.agent_state,
+                    llm_credentials,
+                    progress_callback=progress_handler("Analyst"),
                 )
             except Exception as e:
+                process_status.update(
+                    label="El Analyst no pudo generar el informe",
+                    state="error",
+                    expanded=True,
+                )
                 st.error(f"Error during calling the Analyst: {e}")
                 return
 
             st.session_state.agent_state = updated_state
+            elapsed = int(time.monotonic() - started_at)
+            process_status.update(
+                label=f"Análisis completado en {elapsed // 60}m {elapsed % 60}s",
+                state="complete",
+                expanded=False,
+            )
 
         report = st.session_state.agent_state["final_report"]
 
