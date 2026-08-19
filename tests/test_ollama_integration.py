@@ -10,7 +10,7 @@ from promoai.general_utils.llm_connection import ServiceUnavailableError, query_
 
 
 def test_ollama_provider_has_expected_default_model():
-    assert AI_MODEL_DEFAULTS[AIProviders.OLLAMA.value] == "qwen3.5:4b"
+    assert AI_MODEL_DEFAULTS[AIProviders.OLLAMA.value] == "llama3.1:8b"
 
 
 def test_query_llm_uses_ollama_openai_compatible_endpoint():
@@ -33,7 +33,7 @@ def test_query_llm_uses_ollama_openai_compatible_endpoint():
                 result = query_llm(
                     conversation,
                     api_key="",
-                    llm_name="qwen3.5:4b",
+                    llm_name="llama3.1:8b",
                     ai_provider=AIProviders.OLLAMA.value,
                     llm_args={"artifact_session_dir": trace_dir},
                 )
@@ -44,7 +44,7 @@ def test_query_llm_uses_ollama_openai_compatible_endpoint():
     assert call.kwargs["headers"]["Authorization"] == "Bearer ollama"
     assert call.kwargs["timeout"] == (3.05, 600.0)
     assert call.kwargs["json"] == {
-        "model": "qwen3.5:4b",
+        "model": "llama3.1:8b",
         "messages": conversation,
     }
 
@@ -59,7 +59,7 @@ def test_query_llm_maps_ollama_connection_errors():
                 query_llm(
                     [{"role": "user", "content": "Hello"}],
                     api_key="",
-                    llm_name="qwen3.5:4b",
+                    llm_name="llama3.1:8b",
                     ai_provider=AIProviders.OLLAMA.value,
                     llm_args={"artifact_session_dir": trace_dir},
                 )
@@ -76,7 +76,7 @@ def test_setup_allows_ollama_without_api_key():
     app.selectbox[0].set_value(AIProviders.OLLAMA.value).run()
 
     assert len(app.text_input) == 1
-    assert app.text_input[0].value == "qwen3.5:4b"
+    assert app.text_input[0].value == "llama3.1:8b"
 
     app.button[0].click().run()
 

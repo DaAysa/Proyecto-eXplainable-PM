@@ -51,7 +51,7 @@ Access the unified suite directly at: [https://promoai.streamlit.app/](https://p
 
 ### With Docker and a local LLM
 
-The complete application can run with a local `qwen3.5:4b` model served by
+The complete application can run with a local `llama3.1:8b` model served by
 Ollama. No API key is required for this provider.
 
 ```bash
@@ -60,7 +60,7 @@ docker compose up --build
 
 Open [http://localhost:8501](http://localhost:8501), select
 `Ollama (Local)` in the AI configuration, and save the configuration. The first
-startup waits for Ollama to download the model (approximately 3.4 GB), so it can
+startup waits for Ollama to download the model (approximately 4.9 GB), so it can
 take several minutes depending on the connection. Later startups reuse the
 model stored in the `ollama-data` Docker volume.
 
