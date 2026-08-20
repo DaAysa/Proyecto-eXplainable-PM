@@ -10,7 +10,7 @@ import streamlit as st
 from constants import MAX_FILE_SIZE
 from powl import import_event_log
 
-from promoai.agents.agents import analyst_node, engineer_node, init_state
+from promoai.agents.agents import auditor_node, analyst_node, engineer_node, init_state
 from promoai.general_utils.artifact_store import (
     append_manifest_entry,
     ARTIFACTS_ROOT,
@@ -261,6 +261,11 @@ def chat(llm_credentials: LLMConnection):
         assistant_placeholder = st.empty()
 
         started_at = time.monotonic()
+        execution_trace = []
+
+        def record_progress(message: str):
+            execution_trace.append(message)
+            process_status.write(message)
 
         def progress_handler(agent_name: str):
             def handle(event):
@@ -271,24 +276,24 @@ def chat(llm_credentials: LLMConnection):
                 phase = event.get("phase")
 
                 if phase == "request_started":
-                    process_status.write(
+                    record_progress(
                         f"**{agent_name}** · intento {attempt}/{total} · "
                         f"esperando respuesta del modelo · `{elapsed_label}`"
                     )
                 elif phase == "validating":
-                    process_status.write(
+                    record_progress(
                         f"**{agent_name}** · validando y ejecutando la respuesta · "
                         f"`{elapsed_label}`"
                     )
                 elif phase == "attempt_failed":
                     error = str(event.get("error", "Error desconocido"))
                     short_error = error.replace("\n", " ")[:180]
-                    process_status.write(
+                    record_progress(
                         f"**{agent_name}** · el intento {attempt} requiere corrección: "
                         f"{short_error} · `{elapsed_label}`"
                     )
                 elif phase == "completed":
-                    process_status.write(
+                    record_progress(
                         f"**{agent_name}** · completado en el intento {attempt} · "
                         f"`{elapsed_label}`"
                     )
@@ -296,7 +301,7 @@ def chat(llm_credentials: LLMConnection):
             return handle
 
         with st.status("Procesando la consulta...", expanded=True) as process_status:
-            process_status.write("**Preparación** · registro y contexto listos")
+            record_progress("**Preparación** · registro y contexto listos")
             try:
                 st.session_state.agent_state, _, code = engineer_node(
                     st.session_state.agent_state,
@@ -344,7 +349,22 @@ def chat(llm_credentials: LLMConnection):
                 st.error(f"Error during calling the Analyst: {e}")
                 return
 
-            st.session_state.agent_state = updated_state
+            record_progress(
+                "**Auditor** · esperando verificación del modelo de IA"
+            )
+            try:
+                st.session_state.agent_state = auditor_node(
+                    updated_state, llm_credentials
+                )
+            except Exception as e:
+                process_status.update(
+                    label="El Auditor no pudo verificar el informe",
+                    state="error",
+                    expanded=True,
+                )
+                st.error(f"Error during calling the Auditor: {e}")
+                return
+            record_progress("**Auditor** · verificación de IA completada")
             elapsed = int(time.monotonic() - started_at)
             process_status.update(
                 label=f"Análisis completado en {elapsed // 60}m {elapsed % 60}s",
@@ -352,32 +372,64 @@ def chat(llm_credentials: LLMConnection):
                 expanded=False,
             )
 
-        report = st.session_state.agent_state["final_report"]
+        audit_result = st.session_state.agent_state["audit_result"]
+        report = audit_result["original_response"]
+        verification = str(audit_result["verified"]).lower()
+        audit_explanation = audit_result["explanation"]
+        diagnostic_blocks = [
+            {
+                "type": "code",
+                "content": "\n".join(execution_trace),
+                "language": "text",
+                "label": "Execution trace",
+                "expanded": False,
+            },
+            {
+                "type": "code",
+                "content": st.session_state.agent_state.get("engineer_code", code),
+                "language": "python",
+                "label": "Engineer generated code",
+                "expanded": False,
+            },
+            {
+                "type": "code",
+                "content": st.session_state.agent_state.get("analyst_code", ""),
+                "language": "python",
+                "label": "Analyst generated output",
+                "expanded": False,
+            },
+            {
+                "type": "code",
+                "content": st.session_state.agent_state.get(
+                    "auditor_raw_response", ""
+                ),
+                "language": "json",
+                "label": "Auditor raw response",
+                "expanded": False,
+            },
+        ]
+        verification_block = {
+            "type": "text",
+            "content": (
+                f"**Verification:** `{verification}`  \n"
+                f"**Auditor explanation:** {audit_explanation}"
+            ),
+        }
 
         if isinstance(report, list):
             assistant_content = [
-                {
-                    "type": "code",
-                    "content": code,
-                    "language": "python",
-                    "label": "Generated code",
-                    "expanded": False,
-                },
+                *diagnostic_blocks,
                 *report,
+                verification_block,
             ]
         else:
             assistant_content = [
-                {
-                    "type": "code",
-                    "content": code,
-                    "language": "python",
-                    "label": "Generated code",
-                    "expanded": False,
-                },
+                *diagnostic_blocks,
                 {
                     "type": "text",
                     "content": report,
                 },
+                verification_block,
             ]
 
         # Replace the same live bubble with the final content

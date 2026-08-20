@@ -39,6 +39,14 @@ class ProcessState(dict):
 
     final_report: List[Dict[str, Any]]
 
+    audit_result: Dict[str, Any]
+
+    engineer_code: str
+
+    analyst_code: str
+
+    auditor_raw_response: str
+
     messages_ana: List[Any]
 
     messages_eng: List[Any]
@@ -78,6 +86,10 @@ class ProcessState(dict):
         self["previous_code"] = ""
         self["log_actions"] = {}
         self["final_report"] = []
+        self["audit_result"] = {}
+        self["engineer_code"] = ""
+        self["analyst_code"] = ""
+        self["auditor_raw_response"] = ""
         self["messages_ana"] = []
         self["messages_eng"] = []
         self["extracted_statistics"] = {}

@@ -1,4 +1,6 @@
 import copy
+import json
+import re
 from functools import partial
 from typing import Any, Callable, List, Tuple
 
@@ -17,6 +19,7 @@ from promoai.general_utils.artifact_store import (
 from promoai.general_utils.llm_connection import (
     generate_result_with_error_handling,
     LLMConnection,
+    query_llm,
 )
 
 ERROR_MESSAGE_CODE_GENERATION_ENG = """
@@ -161,6 +164,7 @@ def engineer_node(
     _persist_generated_code(
         state, "engineer", request_index, state["user_request"][-1], code
     )
+    state["engineer_code"] = code
     state["event_log"] = result
     state["log_abstraction"] = state.generate_log_abstraction()
     state["messages_eng"] = messages
@@ -358,6 +362,7 @@ def analyst_node(
             state["user_request"][-1],
             report_code,
         )
+        state["analyst_code"] = report_code
 
     except Exception as e:
         raise Exception(f"Error during analyst node execution: {e}")
@@ -389,4 +394,81 @@ def analyst_node(
         extra={"entries": len(postprocessed_report)},
     )
     state.flush_context()
+    return state
+
+
+def _make_json_safe(value: Any) -> Any:
+    """Convert nested artifact metadata to JSON-safe prompt content."""
+    if isinstance(value, dict):
+        return {str(key): _make_json_safe(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple, set)):
+        return [_make_json_safe(item) for item in value]
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    return str(value)
+
+
+def auditor_node(state: ProcessState, LLMCredentials: LLMConnection) -> ProcessState:
+    """Ask the configured LLM to audit the Analyst output without modifying it."""
+    artifact_summaries = [
+        {
+            "description": str(description),
+            "content": _make_json_safe(content),
+        }
+        for description, content in state["saved_artifacts"].values()
+    ]
+    conversation = [
+        {
+            "role": "system",
+            "content": (
+                "You are an auditing agent for a process-mining analysis. Review "
+                "the Analyst report for internal consistency and whether its claims "
+                "are supported by the supplied artifact summaries. Do not rewrite "
+                "the report. Return only valid JSON with exactly these fields: "
+                '{"verified": true or false, "explanation": "brief explanation"}.'
+            ),
+        },
+        {
+            "role": "user",
+            "content": (
+                "Analyst report:\n"
+                f"{json.dumps(state['final_report'], ensure_ascii=False, default=str)}\n\n"
+                "Artifact summaries:\n"
+                f"{json.dumps(artifact_summaries, ensure_ascii=False, default=str)}"
+            ),
+        },
+    ]
+    effective_llm_args = dict(LLMCredentials.args or {})
+    effective_llm_args["artifact_session_dir"] = state["artifact_session_dir"]
+    response = query_llm(
+        conversation=conversation,
+        api_key=LLMCredentials.api_key,
+        llm_name=LLMCredentials.llm_name,
+        ai_provider=LLMCredentials.ai_provider,
+        llm_args=effective_llm_args,
+    )
+    state["auditor_raw_response"] = response
+
+    match = re.search(r"\{.*\}", response, re.DOTALL)
+    if not match:
+        raise ValueError("The Auditor did not return a JSON object.")
+    audit_decision = json.loads(match.group(0))
+    if not isinstance(audit_decision.get("verified"), bool):
+        raise ValueError("The Auditor JSON field 'verified' must be a boolean.")
+    explanation = audit_decision.get("explanation")
+    if not isinstance(explanation, str) or not explanation.strip():
+        raise ValueError("The Auditor JSON field 'explanation' must be non-empty text.")
+
+    state["audit_result"] = {
+        "original_response": copy.deepcopy(state["final_report"]),
+        "verified": audit_decision["verified"],
+        "explanation": explanation.strip(),
+    }
+    write_json_artifact(
+        state["artifact_session_dir"],
+        "reports",
+        f"auditor_result_request_{len(state['user_request'])}",
+        state["audit_result"],
+        prefix="audit",
+    )
     return state
