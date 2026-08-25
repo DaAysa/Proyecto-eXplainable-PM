@@ -1,5 +1,6 @@
 import os
 import re
+from pathlib import Path
 from typing import Any, Tuple, Union
 
 import pandas as pd
@@ -160,9 +161,9 @@ class PM4PYWrapper:
             ".csv",
             prefix="dataframe",
         )
+        df.to_csv(file_path, index=False)
         self.state.update_artifacts(file_path, description, data_preview)
         self._add_context(f"Dataframe saved: {description}")
-        df.to_csv(file_path, index=False)
         append_manifest_entry(
             self.state["artifact_session_dir"],
             category="dataframes",
@@ -190,8 +191,6 @@ class PM4PYWrapper:
             ".png",
             prefix="visual",
         )
-        self.state.update_artifacts(file_path, description, data)
-        self._add_context(f"Visualization generated: {description}")
         # Export the visualization to the specified file path
         if hasattr(fig, "savefig"):
             fig.savefig(file_path, bbox_inches="tight")
@@ -203,6 +202,12 @@ class PM4PYWrapper:
             fig.write_image(file_path)
         elif str(type(fig)).find("plotly.graph_objs") != -1:
             fig.write_image(file_path)
+        if not Path(file_path).exists():
+            raise FileNotFoundError(
+                f"Visualization export completed without creating the expected file: {file_path}"
+            )
+        self.state.update_artifacts(file_path, description, data)
+        self._add_context(f"Visualization generated: {description}")
         append_manifest_entry(
             self.state["artifact_session_dir"],
             category="visualizations",

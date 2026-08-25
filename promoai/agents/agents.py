@@ -1,4 +1,5 @@
 import copy
+import os
 from functools import partial
 from typing import Any, Callable, List, Tuple
 
@@ -246,10 +247,12 @@ def analyst_node(
     artifact_id_to_filepath = {}
     sent_artifacts = state["sent_artifacts"]
 
-    for i, (file_path, (description, data)) in enumerate(
-        state["saved_artifacts"].items()
-    ):
-        aid = f"artifact_{i}"
+    available_artifact_index = 0
+    for file_path, (description, data) in state["saved_artifacts"].items():
+        if not os.path.exists(file_path):
+            continue
+        aid = f"artifact_{available_artifact_index}"
+        available_artifact_index += 1
         clean_description = str(description).strip("{}'\" ")
         artifact_id_to_filepath[aid] = file_path
 
