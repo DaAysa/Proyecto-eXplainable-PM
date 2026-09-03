@@ -1,6 +1,6 @@
 import copy
 from functools import partial
-from typing import List, Tuple
+from typing import Any, Callable, List, Optional, Tuple
 
 import pandas as pd
 import pm4py
@@ -107,7 +107,9 @@ def init_state(
 
 
 def engineer_node(
-    state: ProcessState, LLMCredentials: LLMConnection
+    state: ProcessState,
+    LLMCredentials: LLMConnection,
+    progress_callback: Optional[Callable[[dict[str, Any]], None]] = None,
 ) -> Tuple[ProcessState, str, str]:
     # Initial state
     # 1. Construct Prompt
@@ -143,6 +145,8 @@ def engineer_node(
     )
     effective_llm_args = dict(LLMCredentials.args or {})
     effective_llm_args["artifact_session_dir"] = state["artifact_session_dir"]
+    effective_llm_args["agent_name"] = "Engineer"
+    effective_llm_args["progress_callback"] = progress_callback
     code, result, messages = generate_result_with_error_handling(
         msg_history,
         extraction_function=api.code_extraction,
@@ -234,7 +238,11 @@ def generate_initial_message_for_analyst(state: ProcessState, context) -> str:
     return msg
 
 
-def analyst_node(state: ProcessState, LLMCredentials: LLMConnection) -> ProcessState:
+def analyst_node(
+    state: ProcessState,
+    LLMCredentials: LLMConnection,
+    progress_callback: Optional[Callable[[dict[str, Any]], None]] = None,
+) -> ProcessState:
     artifact_id_to_description_and_content = {}
     artifact_id_to_filepath = {}
     sent_artifacts = state["sent_artifacts"]
@@ -329,6 +337,8 @@ def analyst_node(state: ProcessState, LLMCredentials: LLMConnection) -> ProcessS
     try:
         effective_llm_args = dict(LLMCredentials.args or {})
         effective_llm_args["artifact_session_dir"] = state["artifact_session_dir"]
+        effective_llm_args["agent_name"] = "Analyst"
+        effective_llm_args["progress_callback"] = progress_callback
         report_code, result, messages = generate_result_with_error_handling(
             msg_history,
             extraction_function=partial_function,

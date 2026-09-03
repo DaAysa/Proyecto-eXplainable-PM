@@ -260,11 +260,32 @@ def chat(llm_credentials: LLMConnection):
         assistant_placeholder = st.empty()
 
         with st.status("Processing your request...", expanded=True) as progress:
+            def show_llm_progress(event: dict) -> None:
+                agent = event.get("agent", "Agent")
+                attempt = event.get("attempt")
+                if event["event"] == "request_started":
+                    progress.write(
+                        f"📡 **{agent} → LLM:** request {attempt}/{event['total_attempts']} "
+                        f"to `{event['provider']}` / `{event['model']}`."
+                    )
+                elif event["event"] == "response_received":
+                    progress.write(f"📥 **LLM → {agent}:** response received for request {attempt}.")
+                elif event["event"] == "attempt_retry":
+                    progress.write(
+                        f"🔁 **{agent}:** request {attempt} could not be used; asking the LLM to correct it."
+                    )
+                elif event["event"] == "attempt_completed":
+                    progress.write(f"✅ **{agent}:** request {attempt} completed successfully.")
+                elif event["event"] == "request_failed":
+                    progress.write(f"❌ **{agent} → LLM:** request {attempt} failed before a response was received.")
+
             progress.write("⏳ **Engineer:** preparing the event log and your request.")
             progress.write("🤖 **Engineer:** asking the model to generate preprocessing code.")
             try:
                 st.session_state.agent_state, _, code = engineer_node(
-                    st.session_state.agent_state, llm_credentials
+                    st.session_state.agent_state,
+                    llm_credentials,
+                    progress_callback=show_llm_progress,
                 )
             except Exception as e:
                 progress.update(label="Engineer could not complete the request", state="error")
@@ -294,7 +315,9 @@ def chat(llm_credentials: LLMConnection):
             progress.write("🤖 **Analyst:** asking the model to generate the analysis.")
             try:
                 updated_state = analyst_node(
-                    st.session_state.agent_state, llm_credentials
+                    st.session_state.agent_state,
+                    llm_credentials,
+                    progress_callback=show_llm_progress,
                 )
             except Exception as e:
                 progress.update(label="Analyst could not complete the report", state="error")

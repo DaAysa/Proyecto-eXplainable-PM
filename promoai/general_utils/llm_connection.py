@@ -22,7 +22,11 @@ from promoai.general_utils.artifact_store import (
 from promoai.prompting.prompt_engineering import ERROR_MESSAGE_FOR_MODEL_GENERATION
 
 T = TypeVar("T")
-INTERNAL_LLM_ARG_KEYS = {"artifact_session_dir"}
+INTERNAL_LLM_ARG_KEYS = {
+    "artifact_session_dir",
+    "progress_callback",
+    "agent_name",
+}
 
 # ----------------------------------------------------------------------------
 # LLM Connection Class
@@ -173,6 +177,19 @@ def _split_llm_args(
 def _resolve_trace_session_dir(llm_args: Optional[dict]) -> str:
     _, internal_args = _split_llm_args(llm_args)
     return internal_args.get("artifact_session_dir") or create_analysis_session("llm")
+
+
+def _report_llm_progress(llm_args: Optional[dict], event: str, **details: Any) -> None:
+    """Send optional in-app progress events without including them in API payloads."""
+    _, internal_args = _split_llm_args(llm_args)
+    callback = internal_args.get("progress_callback")
+    if not callable(callback):
+        return
+    try:
+        callback({"event": event, "agent": internal_args.get("agent_name"), **details})
+    except Exception:
+        # Progress rendering must never affect a model request.
+        logger.debug("Could not render LLM progress update", exc_info=True)
 
 
 def _to_jsonable(value: Any) -> Any:
@@ -575,22 +592,47 @@ def generate_result_with_error_handling(
     effective_llm_args = dict(provider_args)
     effective_llm_args["artifact_session_dir"] = trace_session_dir
     error_history = []
-    for iteration in range(max_iterations + additional_iterations):
-        response = query_llm(
-            conversation,
-            api_key,
-            llm_name,
-            ai_provider,
-            effective_llm_args,
+    total_iterations = max_iterations + additional_iterations
+    for iteration in range(total_iterations):
+        attempt = iteration + 1
+        _report_llm_progress(
+            llm_args,
+            "request_started",
+            attempt=attempt,
+            total_attempts=total_iterations,
+            provider=ai_provider,
+            model=llm_name,
         )
+        try:
+            response = query_llm(
+                conversation,
+                api_key,
+                llm_name,
+                ai_provider,
+                effective_llm_args,
+            )
+        except Exception as e:
+            _report_llm_progress(
+                llm_args, "request_failed", attempt=attempt, error=str(e)
+            )
+            raise
+
+        _report_llm_progress(llm_args, "response_received", attempt=attempt)
         try:
             conversation.append({"role": "assistant", "content": response})
             auto_duplicate = iteration >= max_iterations
             code, result = extraction_function(response, auto_duplicate)
+            _report_llm_progress(llm_args, "attempt_completed", attempt=attempt)
             return code, result, conversation  # Break loop if execution is successful
         except Exception as e:
             error_description = str(e)
             error_history.append(error_description)
+            _report_llm_progress(
+                llm_args,
+                "attempt_retry",
+                attempt=attempt,
+                error=error_description,
+            )
             if constants.ENABLE_PRINTS:
                 print("Error detected in iteration " + str(iteration + 1))
                 print("\t" + error_description.replace("\n", " ").replace("\r", " "))
