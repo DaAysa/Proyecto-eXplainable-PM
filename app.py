@@ -1,9 +1,44 @@
+import importlib
+import os
 import subprocess
 import sys
 from pathlib import Path
 
 import streamlit as st
 from streamlit.runtime.scriptrunner import get_script_run_ctx
+
+
+def _preload_pm4py() -> None:
+    """Load pm4py even when Streamlit's launcher process has already exited."""
+    import psutil
+
+    original_process = psutil.Process
+
+    try:
+        original_process(os.getppid())
+    except psutil.NoSuchProcess:
+        class MissingParentProcess:
+            def name(self) -> str:
+                return ""
+
+        def process_or_missing(pid=None):
+            try:
+                return original_process(pid)
+            except psutil.NoSuchProcess:
+                if pid == os.getppid():
+                    return MissingParentProcess()
+                raise
+
+        psutil.Process = process_or_missing
+        try:
+            importlib.import_module("pm4py")
+        finally:
+            psutil.Process = original_process
+    else:
+        importlib.import_module("pm4py")
+
+
+_preload_pm4py()
 
 
 def inject_css() -> None:
