@@ -1,4 +1,4 @@
-from typing import Any, Dict, List, Tuple, Union
+from typing import TYPE_CHECKING, Any, Dict, List, Tuple, Union
 
 import pandas as pd
 
@@ -13,8 +13,12 @@ from promoai.general_utils.artifact_store import (
     create_analysis_session,
 )
 
+if TYPE_CHECKING:
+    from promoai.agents.contracts import AnalystResult, EngineerResult
 
-class ProcessState(dict):
+
+class PMaxSession(dict):
+    """PMAx session aggregate with a mapping interface for legacy integrations."""
     user_request: List[str]
 
     # ---- Data Objects ---- #
@@ -110,6 +114,24 @@ class ProcessState(dict):
     def __repr__(self):
         return self.__str__()
 
+    @property
+    def latest_request(self) -> str:
+        return self["user_request"][-1]
+
+    def add_request(self, request: str) -> None:
+        self["user_request"].append(request)
+
+    def apply_engineer_result(self, result: "EngineerResult") -> None:
+        self["event_log"] = result.event_log
+        self["log_abstraction"] = self.generate_log_abstraction()
+        self["messages_eng"] = result.messages
+
+    def apply_analyst_result(self, result: "AnalystResult") -> None:
+        self["messages_ana"] = result.messages
+        self["final_report"] = result.report
+        self["sent_artifacts"].extend(result.sent_artifact_ids)
+        self.flush_context()
+
     def generate_log_abstraction(self):
         df = self["event_log"]
 
@@ -160,3 +182,7 @@ class ProcessState(dict):
 
     def flush_context(self):
         self["context"] = []
+
+
+# Backwards-compatible name used by PM4PYWrapper and external callers.
+ProcessState = PMaxSession
