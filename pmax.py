@@ -9,7 +9,8 @@ import streamlit as st
 from constants import MAX_FILE_SIZE
 from powl import import_event_log
 
-from promoai.agents.agents import analyst_node, engineer_node, init_state
+from promoai.agents.agents import init_state
+from promoai.agents.workflow import PMaxWorkflow
 from promoai.general_utils.artifact_store import (
     append_manifest_entry,
     ARTIFACTS_ROOT,
@@ -256,8 +257,12 @@ def chat(llm_credentials: LLMConnection):
             )
         else:
             # Add the user request to the agent state
-            st.session_state.agent_state["user_request"].append(prompt)
+            if hasattr(st.session_state.agent_state, "add_request"):
+                st.session_state.agent_state.add_request(prompt)
+            else:
+                st.session_state.agent_state["user_request"].append(prompt)
         assistant_placeholder = st.empty()
+        workflow = PMaxWorkflow(llm_credentials)
 
         with st.status("Processing your request...", expanded=True) as progress:
             def show_llm_progress(event: dict) -> None:
@@ -282,11 +287,11 @@ def chat(llm_credentials: LLMConnection):
             progress.write("⏳ **Engineer:** preparing the event log and your request.")
             progress.write("🤖 **Engineer:** asking the model to generate preprocessing code.")
             try:
-                st.session_state.agent_state, _, code = engineer_node(
+                engineer_result = workflow.run_engineer(
                     st.session_state.agent_state,
-                    llm_credentials,
                     progress_callback=show_llm_progress,
                 )
+                code = engineer_result.generated_code
             except Exception as e:
                 progress.update(label="Engineer could not complete the request", state="error")
                 st.error(f"Error during calling the Engineer: {e}")
@@ -314,9 +319,8 @@ def chat(llm_credentials: LLMConnection):
             progress.write("📊 **Analyst:** reviewing the processed event log and preparing the report.")
             progress.write("🤖 **Analyst:** asking the model to generate the analysis.")
             try:
-                updated_state = analyst_node(
+                workflow.run_analyst(
                     st.session_state.agent_state,
-                    llm_credentials,
                     progress_callback=show_llm_progress,
                 )
             except Exception as e:
@@ -324,7 +328,6 @@ def chat(llm_credentials: LLMConnection):
                 st.error(f"Error during calling the Analyst: {e}")
                 return
 
-            st.session_state.agent_state = updated_state
             progress.write("✅ **Analyst:** report generated.")
             progress.update(label="Request completed", state="complete", expanded=True)
 
