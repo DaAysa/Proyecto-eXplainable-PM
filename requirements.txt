@@ -10,6 +10,7 @@ pandas
 pillow
 plotly
 pm4py
+psutil
 powl>=2.3.4
 requests
 rustxes
