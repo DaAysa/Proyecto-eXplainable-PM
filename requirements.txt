@@ -19,3 +19,4 @@ tabulate
 xhtml2pdf
 openai==2.30.0
 scikit-learn==1.7.2
+sax4bpm @ git+https://github.com/vverakroger/explainable-sax4bpm.git@0.0.2
