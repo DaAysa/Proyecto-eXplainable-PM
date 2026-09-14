@@ -11,7 +11,7 @@ from powl import convert_to_petri_net
 from powl.conversion.to_powl.from_pn.converter import convert_workflow_net_to_powl
 
 import promoai.agents.utils as utils
-from promoai.agents.state import ProcessState
+from promoai.agents.state import ProcessState, clone_event_log
 from promoai.agents.utils import transform_dataframe_for_llms
 from promoai.general_utils.artifact_store import (
     append_manifest_entry,
@@ -56,7 +56,8 @@ class LLMClient:
 class PM4PYWrapper:
     def __init__(self, state: ProcessState, client: Union[LLMClient, None]):
         # ==== Load event log ==== #
-        self.event_log = state["event_log"]
+        self._request_base_event_log = clone_event_log(state["event_log"])
+        self.event_log = clone_event_log(self._request_base_event_log)
         # used to detect potential leaks
         self._raw_column_fingerprints = {
             hash(tuple(sorted(self.event_log[col].astype(str).unique()))): col
@@ -356,6 +357,10 @@ class PM4PYWrapper:
         """
         Extracts code from a given code snippet, removing any markdown formatting.
         """
+        # Every generated-code attempt starts from the same request input. Failed
+        # attempts must not influence later retries or the session event log.
+        self.event_log = clone_event_log(self._request_base_event_log)
+
         # Check that the code is wrapped in ```python ... ```
         pattern = r"```python\s*(.*?)\s*```"
         match = re.search(pattern, code_snippet, re.DOTALL)
@@ -384,6 +389,12 @@ class PM4PYWrapper:
             "final_event_log": self.event_log,
         }
 
-        return code, execute_code_and_get_variable(
-            code, "final_event_log", namespace=namespace
-        )
+        try:
+            result = execute_code_and_get_variable(
+                code, "final_event_log", namespace=namespace
+            )
+        except Exception:
+            self.event_log = clone_event_log(self._request_base_event_log)
+            raise
+
+        return code, result

@@ -39,6 +39,7 @@ class EngineerAgent:
         state: ProcessState,
         progress_callback: ProgressCallback | None = None,
     ) -> EngineerResult:
+        state.reset_event_log_for_request()
         api = PM4PYWrapper(state, LLMClient(self._credentials))
         messages = self._prompt_builder.build(state, api.get_API_summary())
         llm_args = self._llm_args(state, progress_callback)

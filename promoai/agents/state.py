@@ -1,3 +1,4 @@
+import copy
 from typing import TYPE_CHECKING, Any, Dict, List, Tuple, Union
 
 import pandas as pd
@@ -15,6 +16,13 @@ from promoai.general_utils.artifact_store import (
 
 if TYPE_CHECKING:
     from promoai.agents.contracts import AnalystResult, EngineerResult
+
+
+def clone_event_log(event_log):
+    """Return an independent event-log copy suitable for an agent execution."""
+    if isinstance(event_log, pd.DataFrame):
+        return event_log.copy(deep=True)
+    return copy.deepcopy(event_log)
 
 
 class PMaxSession(dict):
@@ -70,7 +78,8 @@ class PMaxSession(dict):
             raise ValueError(
                 "Event log cannot be None. Please provide a valid event log to initialize the ProcessState."
             )
-        self["event_log"] = event_log
+        self["initial_event_log"] = clone_event_log(event_log)
+        self["event_log"] = clone_event_log(self["initial_event_log"])
         self["artifact_session_dir"] = artifact_session_dir or create_analysis_session(
             "pmax"
         )
@@ -120,6 +129,11 @@ class PMaxSession(dict):
 
     def add_request(self, request: str) -> None:
         self["user_request"].append(request)
+
+    def reset_event_log_for_request(self) -> None:
+        """Start a request from a fresh copy of the originally uploaded log."""
+        self["event_log"] = clone_event_log(self["initial_event_log"])
+        self["log_abstraction"] = self.generate_log_abstraction()
 
     def apply_engineer_result(self, result: "EngineerResult") -> None:
         self["event_log"] = result.event_log
