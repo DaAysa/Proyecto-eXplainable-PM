@@ -11,6 +11,11 @@ from powl import convert_to_petri_net
 from powl.conversion.to_powl.from_pn.converter import convert_workflow_net_to_powl
 
 import promoai.agents.utils as utils
+from promoai.agents.sax_causal import (
+    EDGE_COLUMNS,
+    analyze_causal_dependencies,
+    validate_min_strength,
+)
 from promoai.agents.state import ProcessState
 from promoai.agents.utils import transform_dataframe_for_llms
 from promoai.general_utils.artifact_store import (
@@ -87,6 +92,7 @@ class PM4PYWrapper:
 
         3. Mining & Analysis: \n
            - api.discover_process_model() -> returns nothing, updates internal state with a discovered Petri net model based on the event log and saves visualization of it. \n
+           - api.discover_causal_dependencies(min_strength: float = 0.3) -> Uses SAX4BPM to infer activity-to-activity causal execution dependencies from timing in the current filtered event log. Saves a causal graph and a compact cause/effect/strength table for the analyst. \n
            - api.cc_alignments() -> returns conformance checking results based on alignments, i.e., a tuple of fitness, precision, F1. \n
            - api.cc_token_based_replay() -> returns conformance checking results based on token-based replay, i.e., a tuple of fitness, precision, F1. \n
            - api.discover_from_text(description : str) -> saves a Petri net (process model) as ``api.process_model`` in state of a process described with text. \n
@@ -113,6 +119,8 @@ class PM4PYWrapper:
         - Always use the save_dataframe method to save any dataframe, AVOID built-in methods in pandas. \n
         - Whenever asked to edit a process model, use the `edit_model` method which takes a textual description of the required edit, and modifies the current process model solely based on the provided textual description. \n
         - If `edit_model` fails, you can use the standard `discover_from_text` method but provide a detailed textual description of the original model (use abstraction method) and the required edit. \n
+        - Use `discover_causal_dependencies` when the user asks which process activities cause, influence, or explain the timing of other process activities. It analyzes the complete current filtered log. \n
+        - SAX4BPM does not establish whether case attributes or resources cause a business outcome or KPI. For those questions, provide useful descriptive associations when possible, but do not label them as causal. \n
         """
 
     def _add_context(self, description: str):
@@ -302,6 +310,56 @@ class PM4PYWrapper:
         net, im, fm = convert_to_petri_net(self.powl)
         self.pnet = (net, im, fm)
         self.state.save_model((net, im, fm))
+
+    def discover_causal_dependencies(self, min_strength: float = 0.3) -> None:
+        """Save SAX4BPM activity causal-dependency evidence for the analyst."""
+        threshold = validate_min_strength(min_strength)
+        description = (
+            "SAX4BPM causal execution dependencies "
+            f"(minimum strength {threshold:g})"
+        )
+        empty_edges = pd.DataFrame(columns=EDGE_COLUMNS)
+
+        try:
+            result = analyze_causal_dependencies(self.event_log, threshold)
+        except ModuleNotFoundError as exc:
+            raise RuntimeError(
+                "SAX4BPM is required for causal dependency analysis but is not installed."
+            ) from exc
+        except Exception as exc:
+            self.save_dataframe(empty_edges, description)
+            self._add_context(
+                "SAX4BPM could not infer activity causal execution dependencies "
+                "from the current event log. The log may contain too few suitable "
+                "traces or insufficient timing variation; no causal relationship "
+                "should be claimed from this result."
+            )
+            self._log_action(
+                "SAX4BPM causal analysis produced no usable model "
+                f"({type(exc).__name__})."
+            )
+            return
+
+        self.save_dataframe(result.edges, description)
+        if result.graph is not None:
+            self.save_visualization(result.graph, description, result.edges)
+
+        self._add_context(
+            "The causal artifacts contain SAX4BPM-inferred causal execution "
+            "dependencies between process activities, using the positive LiNGAM "
+            "chain modality with process-order prior knowledge. Treat them as "
+            "observationally inferred execution dependencies, not as proof of an "
+            "interventional causal effect."
+        )
+        if result.edges.empty:
+            self._add_context(
+                f"No causal execution dependencies met the {threshold:g} minimum "
+                "strength threshold."
+            )
+        self._log_action(
+            "Ran SAX4BPM causal execution dependency analysis on the current "
+            f"event log ({result.node_count} activities, {len(result.edges)} edges)."
+        )
 
     def cc_alignments(self, net: PNet, im, fm) -> Tuple[float, float, float]:
         fitness = pm4py.conformance_diagnostics_alignments(self.event_log, net, im, fm)
