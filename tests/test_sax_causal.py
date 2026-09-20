@@ -190,6 +190,18 @@ final_event_log = api.event_log
         self.assertNotIn("import sax", code)
         self.assertIs(final_event_log, self.event_log)
 
+    def test_disabled_causal_analysis_is_hidden_and_cannot_run(self):
+        self.state["causal_enabled"] = False
+
+        self.assertNotIn("discover_causal_dependencies", self.api.get_API_summary())
+        with patch(
+            "promoai.agents.pm4py_wrapper.analyze_causal_dependencies"
+        ) as analyze:
+            with self.assertRaisesRegex(RuntimeError, "disabled"):
+                self.api.discover_causal_dependencies()
+
+        analyze.assert_not_called()
+
 
 class SAXCausalPromptTests(unittest.TestCase):
     def test_engineer_prompt_advertises_supported_causal_scope(self):
@@ -219,6 +231,22 @@ class SAXCausalPromptTests(unittest.TestCase):
         self.assertIn("SAX4BPM-inferred causal execution dependencies", prompt)
         self.assertIn("interventionally proven causation", prompt)
         self.assertIn("include both the graph and edge table", prompt)
+
+    def test_disabled_causal_analysis_is_omitted_from_prompts(self):
+        state = {
+            "messages_eng": [],
+            "user_request": ["Analyze the process"],
+            "log_abstraction": "summary",
+            "causal_enabled": False,
+        }
+
+        engineer_prompt = EngineerPromptBuilder().build(state, "API summary")[0][
+            "content"
+        ]
+        analyst_prompt = AnalystPromptBuilder._initial_message(state, "context")
+
+        self.assertNotIn("SAX4BPM", engineer_prompt)
+        self.assertNotIn("SAX4BPM", analyst_prompt)
 
     def test_causal_edge_table_is_allowed_even_when_its_preview_is_long(self):
         catalog = ArtifactCatalog.from_saved_artifacts(

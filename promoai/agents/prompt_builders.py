@@ -23,6 +23,13 @@ class EngineerPromptBuilder:
     """Builds Engineer conversations without performing I/O or model calls."""
 
     def build(self, state: ProcessState, api_summary: str) -> list[dict[str, str]]:
+        causal_guidance = (
+            """
+    - CAUSAL QUESTIONS: use SAX4BPM through `api.discover_causal_dependencies()` only for causal execution dependencies between process activities based on their timing. Do not use it to claim that a case attribute, resource, or other feature causes a business outcome or KPI; compute descriptive associations for those questions and leave the causal limitation explicit for the analyst. \n
+    """
+            if state.get("causal_enabled", True)
+            else ""
+        )
         system_message = f"""
     You are a Process Mining Data Engineer.
 
@@ -39,7 +46,7 @@ class EngineerPromptBuilder:
     IMPORTANT:
     - If the previous code you generated is able to answer the user's new request without any modifications, just return the event log without any changes.
     - MANDATORY PREPROCESSING: if the actvities or timestamps or case identifiers are not in the expected columns, you need to preprocess the log to ensure they are. You can use the API methods or pandas for this. Otherwise, you will trigger errors in the subsequent steps. \n
-    - CAUSAL QUESTIONS: use SAX4BPM through `api.discover_causal_dependencies()` only for causal execution dependencies between process activities based on their timing. Do not use it to claim that a case attribute, resource, or other feature causes a business outcome or KPI; compute descriptive associations for those questions and leave the causal limitation explicit for the analyst. \n
+    {causal_guidance}
     """
         if not state["messages_eng"]:
             return [
@@ -70,7 +77,9 @@ class AnalystPromptBuilder:
                 {
                     "role": "user",
                     "content": self._follow_up_message(
-                        _latest_request(state), prompt_input.context
+                        _latest_request(state),
+                        prompt_input.context,
+                        state.get("causal_enabled", True),
                     ),
                 }
             )
@@ -84,7 +93,18 @@ class AnalystPromptBuilder:
         return messages
 
     @staticmethod
-    def _follow_up_message(last_request: str, context: str) -> str:
+    def _follow_up_message(
+        last_request: str, context: str, causal_enabled: bool = True
+    ) -> str:
+        causal_guidance = (
+            """
+    - AVOID adding a dataframe/table to the report unless the user EXPLICITLY asks for it. The SAX4BPM causal edge table is an exception: include it together with the causal graph when both are provided.
+    - When causal artifacts are provided, call their relationships "SAX4BPM-inferred causal execution dependencies", include both the graph and edge table, and do not present them as interventionally proven causation.
+    - If the request asks whether attributes or resources cause a KPI or business outcome, explain that the available analysis can show associations but does not establish that causal claim.
+        """
+            if causal_enabled
+            else ""
+        )
         return f"""
     The Process Engineer has executed the following preprocessing steps on the event log based on the user's request "{context}":
     Please use this information to generate a report, making sure to reference artifacts that are relevant to the current user request and to support your analysis with the provided visualizations and data summaries.
@@ -102,14 +122,28 @@ class AnalystPromptBuilder:
     \n
     - Make sure to follow the strict rules introduced in the initial message (e.g., referencing artifacts by their exact keys, including the visualization if the user asked for it and it is provided, etc.) when generating your report.
     - Do NOT mention any errors or internal processing steps. Your report should be a polished analysis that directly addresses the user's request using the provided artifacts as evidence to support your conclusions.
-    - AVOID adding a dataframe/table to the report unless the user EXPLICITLY asks for it. The SAX4BPM causal edge table is an exception: include it together with the causal graph when both are provided.
-    - When causal artifacts are provided, call their relationships "SAX4BPM-inferred causal execution dependencies", include both the graph and edge table, and do not present them as interventionally proven causation.
-    - If the request asks whether attributes or resources cause a KPI or business outcome, explain that the available analysis can show associations but does not establish that causal claim.
+    - AVOID adding a dataframe/table to the report unless the user EXPLICITLY asks for it. Instead, summarize the key insights from it.
+    {causal_guidance}
     You will receive the artifacts in the consequent message.
     """
 
     @staticmethod
     def _initial_message(state: ProcessState, context: str) -> str:
+        causal_enabled = state.get("causal_enabled", True)
+        causal_table_exception = (
+            ", except for a SAX4BPM causal edge table, which should be included "
+            "with its causal graph"
+            if causal_enabled
+            else ""
+        )
+        causal_rules = (
+            """
+    8. When causal artifacts are provided, include both the graph and edge table, describe their relationships as "SAX4BPM-inferred causal execution dependencies", and do not present them as interventionally proven causation.
+    9. SAX4BPM supports activity-to-activity timing dependencies here. If the user asks whether an attribute, resource, or other feature causes a KPI or business outcome, clearly explain that descriptive associations do not establish that causal claim.
+        """
+            if causal_enabled
+            else ""
+        )
         return f"""
     You are a process analyst.
 
@@ -126,7 +160,7 @@ class AnalystPromptBuilder:
     TASK:
     Construct the `final_report` variable. Interleave your analysis with the relevant artifact keys (e.g., "artifact_0").
     - If an artifact is a visualization (PNG), use it to support your findings.
-    - If an artifact is a table (CSV), summarize the key insights in text if it's relevant. DO NOT include the dataframe in the report unless EXPLICITLY stated by user in the request, except for a SAX4BPM causal edge table, which should be included with its causal graph.
+    - If an artifact is a table (CSV), summarize the key insights in text if it's relevant. DO NOT include the dataframe in the report unless EXPLICITLY stated by user in the request{causal_table_exception}.
     - For visualizations, you will get an abstraction in form of a description (content of the artifact or its summary). Use it to identify if it is relevant and to support your analysis.
 
     OUTPUT FORMAT:
@@ -148,9 +182,8 @@ class AnalystPromptBuilder:
     4. You may reuse artifacts from previous iterations by referencing their keys, but you cannot introduce new artifacts that were not provided in the ARTIFACTS section.
     5. Before generating the report, carefully analyze the provided artifacts, respond after making sure you have fully utilized the available information to answer the user's request.
     6. In the text, DO NOT refer to the artifacts as "artifact_0" but rather as "the chart above", "the chart below", etc. based on the type of artifact and its relevance to the analysis.
-    7. DO NOT include dataframes in your report unless explicitly asked, instead, summarize the key insights from the dataframe in text form. A SAX4BPM causal edge table is the exception and should be included with its causal graph.
-    8. When causal artifacts are provided, include both the graph and edge table, describe their relationships as "SAX4BPM-inferred causal execution dependencies", and do not present them as interventionally proven causation.
-    9. SAX4BPM supports activity-to-activity timing dependencies here. If the user asks whether an attribute, resource, or other feature causes a KPI or business outcome, clearly explain that descriptive associations do not establish that causal claim.
+    7. DO NOT include dataframes in your report unless explicitly asked, instead, summarize the key insights from the dataframe in text form.{causal_table_exception}.
+    {causal_rules}
 """
 
     @staticmethod

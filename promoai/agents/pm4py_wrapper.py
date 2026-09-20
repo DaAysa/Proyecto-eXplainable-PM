@@ -73,9 +73,30 @@ class PM4PYWrapper:
         self.state = state
         self.client = client
 
-    @staticmethod
-    def get_API_summary() -> str:
-        return """
+    def get_API_summary(self=None) -> str:
+        # Keep the former class-level call working while allowing wrapper
+        # instances to derive the feature toggle from their session state.
+        causal_enabled = (
+            self.state.get("causal_enabled", True)
+            if isinstance(self, PM4PYWrapper)
+            else True
+        )
+        causal_method = (
+            """
+           - api.discover_causal_dependencies(min_strength: float = 0.3) -> Uses SAX4BPM to infer activity-to-activity causal execution dependencies from timing in the current filtered event log. Saves a causal graph and a compact cause/effect/strength table for the analyst. \n
+        """
+            if causal_enabled
+            else ""
+        )
+        causal_rules = (
+            """
+        - Use `discover_causal_dependencies` when the user asks which process activities cause, influence, or explain the timing of other process activities. It analyzes the complete current filtered log. \n
+        - SAX4BPM does not establish whether case attributes or resources cause a business outcome or KPI. For those questions, provide useful descriptive associations when possible, but do not label them as causal. \n
+        """
+            if causal_enabled
+            else ""
+        )
+        return f"""
         You have access to a variable `api` which is an instance of the Process Mining Preprocessing Engine.
 
         AVAILABLE METHODS:
@@ -92,7 +113,7 @@ class PM4PYWrapper:
 
         3. Mining & Analysis: \n
            - api.discover_process_model() -> returns nothing, updates internal state with a discovered Petri net model based on the event log and saves visualization of it. \n
-           - api.discover_causal_dependencies(min_strength: float = 0.3) -> Uses SAX4BPM to infer activity-to-activity causal execution dependencies from timing in the current filtered event log. Saves a causal graph and a compact cause/effect/strength table for the analyst. \n
+           {causal_method}
            - api.cc_alignments() -> returns conformance checking results based on alignments, i.e., a tuple of fitness, precision, F1. \n
            - api.cc_token_based_replay() -> returns conformance checking results based on token-based replay, i.e., a tuple of fitness, precision, F1. \n
            - api.discover_from_text(description : str) -> saves a Petri net (process model) as ``api.process_model`` in state of a process described with text. \n
@@ -119,8 +140,7 @@ class PM4PYWrapper:
         - Always use the save_dataframe method to save any dataframe, AVOID built-in methods in pandas. \n
         - Whenever asked to edit a process model, use the `edit_model` method which takes a textual description of the required edit, and modifies the current process model solely based on the provided textual description. \n
         - If `edit_model` fails, you can use the standard `discover_from_text` method but provide a detailed textual description of the original model (use abstraction method) and the required edit. \n
-        - Use `discover_causal_dependencies` when the user asks which process activities cause, influence, or explain the timing of other process activities. It analyzes the complete current filtered log. \n
-        - SAX4BPM does not establish whether case attributes or resources cause a business outcome or KPI. For those questions, provide useful descriptive associations when possible, but do not label them as causal. \n
+        {causal_rules}
         """
 
     def _add_context(self, description: str):
@@ -313,6 +333,10 @@ class PM4PYWrapper:
 
     def discover_causal_dependencies(self, min_strength: float = 0.3) -> None:
         """Save SAX4BPM activity causal-dependency evidence for the analyst."""
+        if not self.state.get("causal_enabled", True):
+            raise RuntimeError(
+                "Causal dependency analysis is disabled for this session."
+            )
         threshold = validate_min_strength(min_strength)
         description = (
             "SAX4BPM causal execution dependencies "
