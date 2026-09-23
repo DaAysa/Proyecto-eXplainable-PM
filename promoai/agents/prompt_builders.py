@@ -25,7 +25,10 @@ class EngineerPromptBuilder:
     def build(self, state: ProcessState, api_summary: str) -> list[dict[str, str]]:
         causal_guidance = (
             """
-    - CAUSAL QUESTIONS: use SAX4BPM through `api.discover_causal_dependencies()` only for causal execution dependencies between process activities based on their timing. Do not use it to claim that a case attribute, resource, or other feature causes a business outcome or KPI; compute descriptive associations for those questions and leave the causal limitation explicit for the analyst. \n
+    - CAUSAL QUESTIONS: SAX4BPM is available through `api.discover_causal_dependencies()` to discover causal execution dependencies between process activities from their timing.
+    - You MUST call `api.discover_causal_dependencies()` whenever the user asks what activity causes, influences, explains, produces, or contributes to another activity, delay, waiting time, or process behavior. Questions phrased as "why", "what causes", "por que", "que causa", "influye", "provoca", or similar causal language also require this call. Do this even when previous generated code can otherwise be reused.
+    - Do not replace SAX4BPM with only a DFG, variants, correlations, averages, or descriptive charts when the request is causal. Those analyses may complement SAX4BPM but do not substitute for it.
+    - SAX4BPM is limited here to activity-to-activity execution dependencies. Do not use it to claim that a case attribute, resource, or other feature causes a business outcome or KPI; compute descriptive associations for those questions and leave this causal limitation explicit for the analyst. \n
     """
             if state.get("causal_enabled", True)
             else ""

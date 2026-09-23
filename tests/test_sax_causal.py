@@ -217,6 +217,9 @@ class SAXCausalPromptTests(unittest.TestCase):
 
         self.assertIn("min_strength: float = 0.3", prompt)
         self.assertIn("api.discover_causal_dependencies()", prompt)
+        self.assertIn("You MUST call", prompt)
+        self.assertIn("Do this even when previous generated code", prompt)
+        self.assertIn("do not substitute for it", prompt)
         self.assertIn("case attribute", prompt)
         self.assertIn("business outcome or KPI", prompt)
 
