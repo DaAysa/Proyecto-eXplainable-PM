@@ -380,6 +380,32 @@ class PM4PYWrapper:
                 f"No causal execution dependencies met the {threshold:g} minimum "
                 "strength threshold."
             )
+        else:
+            edge_count = len(result.edges)
+            dependency_label = "dependency" if edge_count == 1 else "dependencies"
+            strongest_edges = result.edges.sort_values(
+                "strength", ascending=False, kind="stable"
+            ).head(10)
+            edge_summary = "; ".join(
+                f"{row.cause_activity} -> {row.effect_activity} "
+                f"(strength {float(row.strength):.3g})"
+                for row in strongest_edges.itertuples(index=False)
+            )
+            remaining_edges = edge_count - len(strongest_edges)
+            remainder_note = (
+                f" The causal edge table contains {remaining_edges} additional "
+                "dependencies."
+                if remaining_edges > 0
+                else ""
+            )
+            self._add_context(
+                f"SAX4BPM inferred {edge_count} causal execution "
+                f"{dependency_label} above the {threshold:g} minimum strength. "
+                f"The strongest relationships are: {edge_summary}. In each "
+                "A -> B relation, "
+                "A is the inferred cause activity and B is the inferred effect "
+                f"activity.{remainder_note}"
+            )
         self._log_action(
             "Ran SAX4BPM causal execution dependency analysis on the current "
             f"event log ({result.node_count} activities, {len(result.edges)} edges)."

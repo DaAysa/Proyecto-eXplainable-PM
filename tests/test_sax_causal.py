@@ -152,6 +152,10 @@ class SAXCausalWrapperTests(unittest.TestCase):
         self.assertTrue(
             any("observationally inferred" in item for item in self.state["context"])
         )
+        causal_summary = " ".join(self.state["context"])
+        self.assertIn("SAX4BPM inferred 1 causal execution dependency", causal_summary)
+        self.assertIn("A -> B (strength 0.8)", causal_summary)
+        self.assertIn("A is the inferred cause activity", causal_summary)
 
     def test_discovery_failure_becomes_empty_evidence_instead_of_failing_workflow(self):
         with patch(
@@ -237,6 +241,14 @@ class SAXCausalPromptTests(unittest.TestCase):
         self.assertIn("SAX4BPM-inferred causal execution dependencies", prompt)
         self.assertIn("interventionally proven causation", prompt)
         self.assertIn("include both the graph and edge table", prompt)
+        self.assertIn("causal process-discovery method", prompt)
+        self.assertIn("activity ordering and timestamps", prompt)
+        self.assertIn("A is the inferred cause activity", prompt)
+        self.assertIn("stronger evidence within the discovered model", prompt)
+        self.assertIn("source of truth", prompt)
+        self.assertIn("cause -> effect", prompt)
+        self.assertIn("report their strengths", prompt)
+        self.assertIn("Do not infer relationships absent", prompt)
 
     def test_disabled_causal_analysis_is_omitted_from_prompts(self):
         state = {

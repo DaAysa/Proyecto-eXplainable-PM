@@ -106,8 +106,14 @@ class AnalystPromptBuilder:
     ) -> str:
         causal_guidance = (
             """
+    SAX4BPM CONTEXT:
+    - SAX4BPM is a causal process-discovery method that analyzes activity ordering and timestamps in an event log to infer directional execution dependencies between process activities.
+    - A relationship `A -> B` means that A is the inferred cause activity and B is the inferred effect activity. `strength` indicates the relative strength of that inferred dependency; stronger values represent stronger evidence within the discovered model.
+    - SAX4BPM results are observational evidence about activity-to-activity process behavior. They do not prove an interventional causal effect and do not establish that a resource, case attribute, or external factor causes a business outcome.
     - AVOID adding a dataframe/table to the report unless the user EXPLICITLY asks for it. The SAX4BPM causal edge table is an exception: include it together with the causal graph when both are provided.
     - When causal artifacts are provided, call their relationships "SAX4BPM-inferred causal execution dependencies", include both the graph and edge table, and do not present them as interventionally proven causation.
+    - Treat the SAX4BPM edge table and its textual summary as the source of truth. Answer the causal question by naming the relevant cause -> effect relationships, reporting their strengths, and explaining how their direction relates to the user's question. Prioritize edges whose effect activity matches the activity or delay being explained.
+    - Do not infer a relationship that is absent from the SAX4BPM evidence. If no dependencies meet the minimum strength threshold, state that clearly instead of proposing unsupported causes.
     - If the request asks whether attributes or resources cause a KPI or business outcome, explain that the available analysis can show associations but does not establish that causal claim.
         """
             if causal_enabled
@@ -146,8 +152,15 @@ class AnalystPromptBuilder:
         )
         causal_rules = (
             """
+    SAX4BPM CONTEXT:
+    - SAX4BPM is a causal process-discovery method that analyzes activity ordering and timestamps in an event log to infer directional execution dependencies between process activities.
+    - A relationship `A -> B` means that A is the inferred cause activity and B is the inferred effect activity. `strength` indicates the relative strength of that inferred dependency; stronger values represent stronger evidence within the discovered model.
+    - SAX4BPM results are observational evidence about activity-to-activity process behavior. They do not prove an interventional causal effect and do not establish that a resource, case attribute, or external factor causes a business outcome.
+
     8. When causal artifacts are provided, include both the graph and edge table, describe their relationships as "SAX4BPM-inferred causal execution dependencies", and do not present them as interventionally proven causation.
-    9. SAX4BPM supports activity-to-activity timing dependencies here. If the user asks whether an attribute, resource, or other feature causes a KPI or business outcome, clearly explain that descriptive associations do not establish that causal claim.
+    9. Treat the SAX4BPM edge table and its textual summary as the source of truth. Identify the relevant cause -> effect relationships, report their strengths, explain the direction, and prioritize edges whose effect activity matches what the user wants to explain.
+    10. Do not infer relationships absent from the SAX4BPM evidence. If no dependencies meet the minimum strength threshold, state that clearly instead of proposing unsupported causes.
+    11. SAX4BPM supports activity-to-activity timing dependencies here. If the user asks whether an attribute, resource, or other feature causes a KPI or business outcome, clearly explain that descriptive associations do not establish that causal claim.
         """
             if causal_enabled
             else ""
