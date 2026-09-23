@@ -220,6 +220,9 @@ class SAXCausalPromptTests(unittest.TestCase):
         self.assertIn("You MUST call", prompt)
         self.assertIn("Do this even when previous generated code", prompt)
         self.assertIn("do not substitute for it", prompt)
+        self.assertIn("must not import or call the `sax` package directly", prompt)
+        self.assertIn("automatically saves two artifacts", prompt)
+        self.assertIn("final_event_log = api.event_log", prompt)
         self.assertIn("case attribute", prompt)
         self.assertIn("business outcome or KPI", prompt)
 

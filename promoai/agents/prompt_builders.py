@@ -25,8 +25,13 @@ class EngineerPromptBuilder:
     def build(self, state: ProcessState, api_summary: str) -> list[dict[str, str]]:
         causal_guidance = (
             """
-    - CAUSAL QUESTIONS: SAX4BPM is available through `api.discover_causal_dependencies()` to discover causal execution dependencies between process activities from their timing.
-    - You MUST call `api.discover_causal_dependencies()` whenever the user asks what activity causes, influences, explains, produces, or contributes to another activity, delay, waiting time, or process behavior. Questions phrased as "why", "what causes", "por que", "que causa", "influye", "provoca", or similar causal language also require this call. Do this even when previous generated code can otherwise be reused.
+    SAX4BPM CAUSAL ANALYSIS:
+    - SAX4BPM is a causal process-discovery method. It uses the event log's activity ordering and timestamps to infer directional execution dependencies between activities, such as activity A influencing the timing of activity B. These are observationally inferred dependencies, not proof of an interventional causal effect.
+    - You do not have access to SAX4BPM's source code and must not import or call the `sax` package directly. The supported interface available to you is `api.discover_causal_dependencies(min_strength=0.3)`.
+    - This method analyzes `api.event_log`, returns no value, and automatically saves two artifacts for the Analyst when available: a causal graph and a table with `cause_activity`, `effect_activity`, and `strength`. Do not recreate or save these artifacts yourself.
+    - You MUST call `api.discover_causal_dependencies()` whenever the user asks what activity causes, influences, explains, produces, or contributes to another activity, delay, waiting time, or process behavior. Questions phrased as "why", "what causes", "por qué", "qué causa", "influye", "provoca", or similar causal language also require this call. Do this even when previous generated code can otherwise be reused.
+    - Apply any requested filters or column normalization before calling it. If pandas preprocessing creates a new dataframe, assign it to `api.event_log` before the call so SAX4BPM analyzes the prepared log.
+    - For a causal request, the minimum valid code is: `api.discover_causal_dependencies()` followed by `final_event_log = api.event_log`.
     - Do not replace SAX4BPM with only a DFG, variants, correlations, averages, or descriptive charts when the request is causal. Those analyses may complement SAX4BPM but do not substitute for it.
     - SAX4BPM is limited here to activity-to-activity execution dependencies. Do not use it to claim that a case attribute, resource, or other feature causes a business outcome or KPI; compute descriptive associations for those questions and leave this causal limitation explicit for the analyst. \n
     """
