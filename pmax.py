@@ -214,7 +214,7 @@ def display_chat_message(role: str, content: Union[str, List[Dict[str, str]]]):
 
 def chat(llm_credentials: LLMConnection):
     # delete old artifacts from previous sessions to save disk space
-    disk_cleanup(ARTIFACTS_ROOT, ttl=1)
+    disk_cleanup(ARTIFACTS_ROOT, ttl=3)
     if "pdf_bytes" not in st.session_state:
         st.session_state["pdf_bytes"] = None
     if "pdf_signature" not in st.session_state:
