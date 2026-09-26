@@ -72,6 +72,21 @@ class SAXCausalAdapterTests(unittest.TestCase):
         with self.assertRaises(SAXCausalInputError):
             normalize_event_log(event_log)
 
+    def test_accepts_iso_timestamps_with_mixed_fractional_seconds(self):
+        event_log = _event_log(1)
+        event_log["time:timestamp"] = [
+            "2026-01-01 08:00:00.123000+00:00",
+            "2026-01-01 08:03:00+00:00",
+            "2026-01-01T08:08:00.456Z",
+        ]
+
+        normalized = normalize_event_log(event_log)
+
+        self.assertTrue(
+            pd.api.types.is_datetime64_any_dtype(normalized["time:timestamp"])
+        )
+        self.assertIsNotNone(normalized["time:timestamp"].dt.tz)
+
     def test_validates_strength_threshold(self):
         self.assertEqual(validate_min_strength(0), 0.0)
         self.assertEqual(validate_min_strength(1), 1.0)

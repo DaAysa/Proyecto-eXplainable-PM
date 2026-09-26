@@ -65,7 +65,10 @@ def normalize_event_log(event_log: Any) -> pd.DataFrame:
     dataframe[ACTIVITY_COLUMN] = dataframe[ACTIVITY_COLUMN].astype("string")
     try:
         dataframe[TIMESTAMP_COLUMN] = pd.to_datetime(
-            dataframe[TIMESTAMP_COLUMN], errors="raise", utc=True
+            dataframe[TIMESTAMP_COLUMN],
+            errors="raise",
+            utc=True,
+            format="mixed",
         )
     except (TypeError, ValueError) as exc:
         raise SAXCausalInputError(
