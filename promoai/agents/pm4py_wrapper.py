@@ -180,7 +180,12 @@ class PM4PYWrapper:
                                     Avoid saving raw data as artifacts, instead, focus on the analysis."
                     )
 
-        data_preview = transform_dataframe_for_llms(df)
+        is_causal_edge_table = description.startswith(
+            "SAX4BPM causal execution dependencies"
+        )
+        data_preview = transform_dataframe_for_llms(
+            df, include_all_rows=is_causal_edge_table
+        )
         file_path = create_managed_path(
             self.state["artifact_session_dir"],
             "dataframes",

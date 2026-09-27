@@ -43,11 +43,13 @@ def parse_dataframe_for_llms(file_pathway: str) -> str:
     return df.to_markdown()
 
 
-def transform_dataframe_for_llms(dataframe: pd.DataFrame) -> str:
+def transform_dataframe_for_llms(
+    dataframe: pd.DataFrame, include_all_rows: bool = False
+) -> str:
     if dataframe.empty:
         return "The artifact exists but contains no data."
     # return it as latex string encapsuled in ```latex ```
-    if len(dataframe) < 50:
+    if include_all_rows or len(dataframe) < 50:
         return f"```markdown\n{dataframe.to_markdown(index = False)}\n```"
     else:
         statistics_per_column = {

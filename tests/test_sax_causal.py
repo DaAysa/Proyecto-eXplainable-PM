@@ -172,6 +172,53 @@ class SAXCausalWrapperTests(unittest.TestCase):
         self.assertIn("A -> B (strength 0.8)", causal_summary)
         self.assertIn("A is the inferred cause activity", causal_summary)
 
+    def test_only_sax_edge_artifact_bypasses_large_dataframe_summary(self):
+        edges = pd.DataFrame(
+            [
+                {
+                    "cause_activity": f"Cause {index}",
+                    "effect_activity": f"Effect {index}",
+                    "strength": 0.9 - index / 1000,
+                }
+                for index in range(60)
+            ]
+            + [
+                {
+                    "cause_activity": "W_Call after offers",
+                    "effect_activity": "O_Accepted",
+                    "strength": 0.31,
+                }
+            ]
+        )
+        analysis = SAXCausalAnalysis(edges=edges, graph=None, node_count=122)
+
+        with patch(
+            "promoai.agents.pm4py_wrapper.analyze_causal_dependencies",
+            return_value=analysis,
+        ):
+            self.api.discover_causal_dependencies()
+
+        causal_preview = next(
+            content
+            for _, (description, content) in self.state["saved_artifacts"].items()
+            if description.startswith("SAX4BPM causal execution dependencies")
+        )
+        self.assertIn("W_Call after offers", causal_preview)
+        self.assertIn("O_Accepted", causal_preview)
+        self.assertNotIn("Here are the statistics per column", causal_preview)
+
+        ordinary = pd.DataFrame(
+            {"label": [f"ordinary-{index}" for index in range(60)]}
+        )
+        self.api.save_dataframe(ordinary, "Ordinary large dataframe")
+        ordinary_preview = next(
+            content
+            for _, (description, content) in self.state["saved_artifacts"].items()
+            if description == "Ordinary large dataframe"
+        )
+        self.assertNotIn("ordinary-59", ordinary_preview)
+        self.assertIn("Here are the statistics per column", ordinary_preview)
+
     def test_discovery_failure_becomes_empty_evidence_instead_of_failing_workflow(self):
         with patch(
             "promoai.agents.pm4py_wrapper.analyze_causal_dependencies",
@@ -299,7 +346,6 @@ class SAXCausalPromptTests(unittest.TestCase):
             "SAX4BPM CAUSAL EDGE TABLE",
             prompt_input.artifact_dataframe_section,
         )
-
 
 @unittest.skipUnless(
     importlib.util.find_spec("sax") is not None,
