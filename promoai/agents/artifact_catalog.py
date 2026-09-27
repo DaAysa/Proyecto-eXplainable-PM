@@ -69,7 +69,11 @@ class ArtifactCatalog:
         return [
             artifact.id
             for artifact in self._artifacts
-            if artifact.type == "dataframe" and len(str(artifact.content)) > 500
+            if artifact.type == "dataframe"
+            and not artifact.description.startswith(
+                "SAX4BPM causal execution dependencies"
+            )
+            and len(str(artifact.content)) > 500
         ]
 
     def build_prompt_input(
@@ -80,7 +84,12 @@ class ArtifactCatalog:
             for artifact in self._artifacts
             if artifact.type == "dataframe" and artifact.id not in sent_artifact_ids
         )
-        dataframes += "\n \n IMPORTANT: DATAFRAMES SHOULD NOT BE INCLUDED IN THE REPORT IF THE USER DID NOT REQUEST THEM EXPLICITLY. \n \n"
+        dataframes += (
+            "\n \n IMPORTANT: DATAFRAMES SHOULD NOT BE INCLUDED IN THE REPORT IF "
+            "THE USER DID NOT REQUEST THEM EXPLICITLY. A SAX4BPM CAUSAL EDGE "
+            "TABLE IS THE EXCEPTION AND SHOULD BE INCLUDED WITH ITS CAUSAL "
+            "GRAPH. \n \n"
+        )
 
         visualizations = "\n".join(
             self._format_visualization(artifact)
