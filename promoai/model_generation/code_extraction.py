@@ -48,8 +48,12 @@ def execute_code_and_get_variable(
     code, variable_name, namespace: Optional[Dict] = None
 ):
     try:
+        # Use one namespace for both globals and locals. Comprehensions, generator
+        # expressions, lambdas, and functions resolve names through the globals
+        # mapping created by exec. With separate mappings they cannot see values
+        # assigned earlier by the generated code (for example ``col_names``).
         local_vars = (namespace or {}).copy()
-        exec(code, globals(), local_vars)
+        exec(code, local_vars, local_vars)
         try:
             value = local_vars[variable_name]
         except KeyError:
