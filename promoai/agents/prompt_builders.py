@@ -110,7 +110,7 @@ class AnalystPromptBuilder:
             """
     CAUSAL DEPENDENCY ARTIFACTS:
     - The causal dependency analysis uses activity ordering and timestamps in the event log to infer directional execution dependencies between process activities.
-    - It can return two complementary artifacts: a CSV edge table with the columns `cause_activity`, `effect_activity`, and `strength`, and a PNG graph that visualizes those same dependencies. Use both as evidence when they are provided, but include only the PNG graph as an artifact in the final report.
+    - It can return two complementary artifacts: a CSV edge table with the columns `cause_activity`, `effect_activity`, and `strength`, and a PNG graph that visualizes those same dependencies.
     - Artifact filenames are internal implementation details. Do not reproduce their filenames or paths, and do not identify the library, framework, algorithm, academic paper, publication, or authors behind the analysis. Refer to the outputs only as the "causal dependency graph" and the "causal dependency edge table".
     - For business-activity nodes, a relationship `A -> B` means that A is the inferred cause activity and B is the inferred effect activity. Nodes named AND, OR, XOR, or `or_n` are structural gateways, not business activities.
     - Check the supplied context before interpreting `strength`. If the unified graph is binary, `strength=1` is only an edge-presence indicator: do not rank edges or call 1 a maximum effect. Only for non-binary coefficients does `strength` indicate relative strength; stronger values represent stronger evidence within the discovered model.
@@ -154,14 +154,14 @@ class AnalystPromptBuilder:
             """
     CAUSAL DEPENDENCY ARTIFACTS:
     - The causal dependency analysis uses activity ordering and timestamps in the event log to infer directional execution dependencies between process activities.
-    - It can return two complementary artifacts: a CSV edge table with the columns `cause_activity`, `effect_activity`, and `strength`, and a PNG graph that visualizes those same dependencies. Use both as evidence when they are provided, but include only the PNG graph as an artifact in the final report.
+    - It can return two complementary artifacts: a CSV edge table with the columns `cause_activity`, `effect_activity`, and `strength`, and a PNG graph that visualizes those same dependencies.
     - Artifact filenames are internal implementation details. Do not reproduce their filenames or paths, and do not identify the library, framework, algorithm, academic paper, publication, or authors behind the analysis. Refer to the outputs only as the "causal dependency graph" and the "causal dependency edge table".
     - For business-activity nodes, a relationship `A -> B` means that A is the inferred cause activity and B is the inferred effect activity. Nodes named AND, OR, XOR, or `or_n` are structural gateways, not business activities.
     - Check the supplied context before interpreting `strength`. If the unified graph is binary, `strength=1` is only an edge-presence indicator: do not rank edges or call 1 a maximum effect. Only for non-binary coefficients does `strength` indicate relative strength; stronger values represent stronger evidence within the discovered model.
     - Chain modality compares activity timings relative to a shared trace anchor. Parent modality compares local activity timings relative to a preceding process anchor. Neither modality automatically constructs two user-defined elapsed-duration variables.
     - These results are observational evidence about activity-to-activity process behavior. They do not prove an interventional causal effect and do not establish that a resource, case attribute, or external factor causes a business outcome.
 
-    8. When causal artifacts are provided, include the graph but never include the edge table itself. Summarize the table's relevant evidence in text, describe the relationships as "inferred causal execution dependencies", and do not present them as interventionally proven causation.
+    8. When causal artifacts are provided, describe their relationships as "inferred causal execution dependencies" and do not present them as interventionally proven causation.
     9. Treat the causal dependency edge table and its textual summary as the source of truth for which graph edges are present. Identify the relevant cause -> effect relationships and explain their direction. Only report their strengths when the context says the values are non-binary coefficients.
     10. Do not infer relationships absent from the provided causal evidence. If no dependencies meet the minimum strength threshold, state that clearly instead of proposing unsupported causes.
     11. The causal artifacts support activity-to-activity timing dependencies here. If the user compares derived durations, use the direct paired-duration statistical artifact as the primary evidence and parent-modality output only as complementary process context. If the user asks whether an attribute, resource, or other feature causes a KPI or business outcome, clearly explain that descriptive associations do not establish that causal claim.
@@ -185,7 +185,7 @@ class AnalystPromptBuilder:
     TASK:
     Construct the `final_report` variable. Interleave your analysis with the relevant artifact keys (e.g., "artifact_0").
     - If an artifact is a visualization (PNG), use it to support your findings.
-    - If an artifact is a table (CSV), use it as evidence and summarize the key insights in text if relevant. NEVER include the dataframe, CSV, or table artifact in the report, even if the user explicitly requests it.
+    - If an artifact contains tabular data, use its relevant findings to support the analysis.
     - For visualizations, you will get an abstraction in form of a description (content of the artifact or its summary). Use it to identify if it is relevant and to support your analysis.
 
     OUTPUT FORMAT:

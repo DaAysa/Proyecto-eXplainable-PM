@@ -76,11 +76,15 @@ class ArtifactCatalog:
         return [artifact.id for artifact in self._artifacts]
 
     @property
-    def dataframe_ids(self) -> list[str]:
+    def long_dataframe_ids(self) -> list[str]:
         return [
             artifact.id
             for artifact in self._artifacts
             if artifact.type == "dataframe"
+            and not artifact.description.startswith(
+                _CAUSAL_DISPLAY_DESCRIPTION
+            )
+            and len(str(artifact.content)) > 500
         ]
 
     def build_prompt_input(
@@ -91,13 +95,6 @@ class ArtifactCatalog:
             for artifact in self._artifacts
             if artifact.type == "dataframe" and artifact.id not in sent_artifact_ids
         )
-        dataframes += (
-            "\n \n IMPORTANT: NEVER INCLUDE A DATAFRAME, CSV, OR TABLE ARTIFACT "
-            "IN THE FINAL REPORT. USE IT AS EVIDENCE AND SUMMARIZE ITS RELEVANT "
-            "CONTENT IN TEXT. THIS ALSO APPLIES TO A CAUSAL DEPENDENCY EDGE "
-            "TABLE; ONLY ITS PNG GRAPH MAY BE INCLUDED AS AN ARTIFACT. \n \n"
-        )
-
         visualizations = "\n".join(
             self._format_visualization(artifact)
             for artifact in self._artifacts

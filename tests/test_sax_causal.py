@@ -20,7 +20,6 @@ from promoai.agents.sax_causal import (
     validate_min_strength,
 )
 from promoai.agents.state import PMaxSession
-from promoai.agents.utils import code_extraction_report
 
 
 def _event_log(case_count=3):
@@ -311,7 +310,8 @@ class SAXCausalPromptTests(unittest.TestCase):
         self.assertNotIn("SAX4BPM", prompt)
         self.assertIn("inferred causal execution dependencies", prompt)
         self.assertIn("interventionally proven causation", prompt)
-        self.assertIn("include the graph but never include the edge table itself", prompt)
+        self.assertNotIn("include the graph but never include the edge table", prompt)
+        self.assertNotIn("NEVER include the dataframe", prompt)
         self.assertIn("CSV edge table", prompt)
         self.assertIn("PNG graph", prompt)
         self.assertIn("`cause_activity`, `effect_activity`, and `strength`", prompt)
@@ -341,7 +341,7 @@ class SAXCausalPromptTests(unittest.TestCase):
         self.assertNotIn("SAX4BPM", engineer_prompt)
         self.assertNotIn("SAX4BPM", analyst_prompt)
 
-    def test_all_dataframes_are_excluded_from_the_final_report(self):
+    def test_causal_artifact_prompt_does_not_direct_inclusion_or_exclusion(self):
         catalog = ArtifactCatalog.from_saved_artifacts(
             {
                 "causal.csv": (
@@ -354,29 +354,13 @@ class SAXCausalPromptTests(unittest.TestCase):
 
         prompt_input = catalog.build_prompt_input([], [])
 
-        self.assertEqual(catalog.dataframe_ids, ["artifact_0", "artifact_1"])
-        self.assertIn(
-            "NEVER INCLUDE A DATAFRAME, CSV, OR TABLE ARTIFACT",
-            prompt_input.artifact_dataframe_section,
-        )
+        self.assertEqual(catalog.long_dataframe_ids, ["artifact_1"])
         self.assertIn(
             "This CSV is the causal dependency edge table",
             prompt_input.artifact_dataframe_section,
         )
         self.assertNotIn("SAX4BPM", prompt_input.artifact_dataframe_section)
-
-    def test_report_parser_rejects_dataframe_artifacts(self):
-        response = """```python
-final_report = [{"type": "artifact", "content": "artifact_0"}]
-```"""
-
-        with self.assertRaisesRegex(Exception, "Table artifacts cannot be included"):
-            code_extraction_report(
-                response,
-                args=None,
-                valid_artifact_ids=["artifact_0"],
-                excluded_artifact_ids=["artifact_0"],
-            )
+        self.assertNotIn("NEVER INCLUDE", prompt_input.artifact_dataframe_section)
 
 @unittest.skipUnless(
     importlib.util.find_spec("sax") is not None,
