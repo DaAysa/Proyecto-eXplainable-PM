@@ -8,8 +8,7 @@ from promoai.agents.contracts import StructuredReport
 from promoai.agents.prompt_builders import AnalystPromptInput
 
 
-_CAUSAL_STORAGE_DESCRIPTION = "SAX4BPM causal execution dependencies"
-_CAUSAL_DISPLAY_DESCRIPTION = "Causal execution dependencies"
+_CAUSAL_ARTIFACT_DESCRIPTION = "Causal execution dependencies"
 
 
 @dataclass(frozen=True)
@@ -38,12 +37,6 @@ class ArtifactCatalog:
         ):
             artifact_type = cls._type_from_path(file_path)
             display_description = str(description).strip("{}'\" ")
-            if display_description.startswith(_CAUSAL_STORAGE_DESCRIPTION):
-                display_description = display_description.replace(
-                    _CAUSAL_STORAGE_DESCRIPTION,
-                    _CAUSAL_DISPLAY_DESCRIPTION,
-                    1,
-                )
             content = (
                 "Visual representation available (PNG). Reference this key to display the chart"
                 if artifact_type == "visualization"
@@ -82,7 +75,7 @@ class ArtifactCatalog:
             for artifact in self._artifacts
             if artifact.type == "dataframe"
             and not artifact.description.startswith(
-                _CAUSAL_DISPLAY_DESCRIPTION
+                _CAUSAL_ARTIFACT_DESCRIPTION
             )
             and len(str(artifact.content)) > 500
         ]
@@ -114,7 +107,7 @@ class ArtifactCatalog:
             "Interpretation: This CSV is the causal dependency edge table. "
             "Each row describes a directed cause_activity -> effect_activity "
             "relationship; interpret strength according to the supplied context.\n "
-            if artifact.description.startswith(_CAUSAL_DISPLAY_DESCRIPTION)
+            if artifact.description.startswith(_CAUSAL_ARTIFACT_DESCRIPTION)
             else ""
         )
         return (
@@ -130,7 +123,7 @@ class ArtifactCatalog:
         causal_explanation = (
             "Interpretation: This PNG is the causal dependency graph and "
             "visualizes the same directed relationships as the edge table.\n "
-            if artifact.description.startswith(_CAUSAL_DISPLAY_DESCRIPTION)
+            if artifact.description.startswith(_CAUSAL_ARTIFACT_DESCRIPTION)
             else ""
         )
         return (

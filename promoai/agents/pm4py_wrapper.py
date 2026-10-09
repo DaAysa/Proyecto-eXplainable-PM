@@ -147,15 +147,6 @@ class PM4PYWrapper:
     def _add_context(self, description: str):
         self.state.add_context(description)
 
-    @staticmethod
-    def _description_for_analyst(description: str) -> str:
-        """Hide implementation names while preserving artifact descriptions on disk."""
-        return description.replace(
-            "SAX4BPM causal execution dependencies",
-            "Causal execution dependencies",
-            1,
-        )
-
     def _log_action(self, description: str):
         # Check if it already exists, if this is the case, then append it to a list
         self.state.log_action(description)
@@ -203,7 +194,7 @@ class PM4PYWrapper:
                     )
 
         is_causal_edge_table = description.startswith(
-            "SAX4BPM causal execution dependencies"
+            "Causal execution dependencies"
         )
         data_preview = transform_dataframe_for_llms(
             artifact_df, include_all_rows=is_causal_edge_table
@@ -216,9 +207,7 @@ class PM4PYWrapper:
             prefix="dataframe",
         )
         self.state.update_artifacts(file_path, description, data_preview)
-        self._add_context(
-            f"Dataframe saved: {self._description_for_analyst(description)}"
-        )
+        self._add_context(f"Dataframe saved: {description}")
         artifact_df.to_csv(file_path, index=False)
         append_manifest_entry(
             self.state["artifact_session_dir"],
@@ -248,9 +237,7 @@ class PM4PYWrapper:
             prefix="visual",
         )
         self.state.update_artifacts(file_path, description, data)
-        self._add_context(
-            f"Visualization generated: {self._description_for_analyst(description)}"
-        )
+        self._add_context(f"Visualization generated: {description}")
         # Export the visualization to the specified file path
         if hasattr(fig, "savefig"):
             fig.savefig(file_path, bbox_inches="tight")
@@ -373,7 +360,7 @@ class PM4PYWrapper:
         threshold = validate_min_strength(min_strength)
         normalized_modality = validate_causal_modality(modality)
         description = (
-            "SAX4BPM causal execution dependencies "
+            "Causal execution dependencies "
             f"(minimum strength {threshold:g})"
         )
         empty_edges = pd.DataFrame(columns=EDGE_COLUMNS)
@@ -406,11 +393,11 @@ class PM4PYWrapper:
             return
 
         description = (
-            "SAX4BPM causal execution dependencies "
+            "Causal execution dependencies "
             f"({result.modality} modality; binary topology after threshold "
             f"{threshold:g})"
             if result.edge_values_are_binary
-            else "SAX4BPM causal execution dependencies "
+            else "Causal execution dependencies "
             f"({result.modality} modality; minimum strength {threshold:g})"
         )
         self.save_dataframe(result.edges, description)

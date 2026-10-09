@@ -164,9 +164,12 @@ class SAXCausalWrapperTests(unittest.TestCase):
         self.assertTrue(any(path.endswith(".png") for path in artifact_paths))
         self.assertTrue(
             any(
-                "sax4bpm_causal_execution_dependencies" in Path(path).name
+                "causal_execution_dependencies" in Path(path).name
                 for path in artifact_paths
             )
+        )
+        self.assertTrue(
+            all("sax4bpm" not in Path(path).name for path in artifact_paths)
         )
         self.assertTrue(all(Path(path).exists() for path in artifact_paths))
         self.assertIs(self.api.event_log, self.event_log)
@@ -208,7 +211,7 @@ class SAXCausalWrapperTests(unittest.TestCase):
         causal_preview = next(
             content
             for _, (description, content) in self.state["saved_artifacts"].items()
-            if description.startswith("SAX4BPM causal execution dependencies")
+            if description.startswith("Causal execution dependencies")
         )
         self.assertIn("W_Call after offers", causal_preview)
         self.assertIn("O_Accepted", causal_preview)
@@ -345,7 +348,7 @@ class SAXCausalPromptTests(unittest.TestCase):
         catalog = ArtifactCatalog.from_saved_artifacts(
             {
                 "causal.csv": (
-                    "SAX4BPM causal execution dependencies (minimum strength 0.3)",
+                    "Causal execution dependencies (minimum strength 0.3)",
                     "x" * 600,
                 ),
                 "ordinary.csv": ("Ordinary long table", "x" * 600),
