@@ -108,17 +108,19 @@ class AnalystPromptBuilder:
     ) -> str:
         causal_guidance = (
             """
-    SAX4BPM CONTEXT:
-    - SAX4BPM is a causal process-discovery method that analyzes activity ordering and timestamps in an event log to infer directional execution dependencies between process activities.
+    CAUSAL DEPENDENCY ARTIFACTS:
+    - The causal dependency analysis uses activity ordering and timestamps in the event log to infer directional execution dependencies between process activities.
+    - It can return two complementary artifacts: a CSV edge table with the columns `cause_activity`, `effect_activity`, and `strength`, and a PNG graph that visualizes those same dependencies. Use both as evidence when they are provided, but include only the PNG graph as an artifact in the final report.
+    - Artifact filenames are internal implementation details. Do not reproduce their filenames or paths, and do not identify the library, framework, algorithm, academic paper, publication, or authors behind the analysis. Refer to the outputs only as the "causal dependency graph" and the "causal dependency edge table".
     - For business-activity nodes, a relationship `A -> B` means that A is the inferred cause activity and B is the inferred effect activity. Nodes named AND, OR, XOR, or `or_n` are structural gateways, not business activities.
     - Check the supplied context before interpreting `strength`. If the unified graph is binary, `strength=1` is only an edge-presence indicator: do not rank edges or call 1 a maximum effect. Only for non-binary coefficients does `strength` indicate relative strength; stronger values represent stronger evidence within the discovered model.
     - Chain modality compares activity timings relative to a shared trace anchor. Parent modality compares local activity timings relative to a preceding process anchor. Neither modality automatically constructs two user-defined elapsed-duration variables.
-    - SAX4BPM results are observational evidence about activity-to-activity process behavior. They do not prove an interventional causal effect and do not establish that a resource, case attribute, or external factor causes a business outcome.
-    - AVOID adding a dataframe/table to the report unless the user EXPLICITLY asks for it. The SAX4BPM causal edge table is an exception: include it together with the causal graph when both are provided.
-    - When causal artifacts are provided, call their relationships "SAX4BPM-inferred causal execution dependencies", include both the graph and edge table, and do not present them as interventionally proven causation.
-    - Treat the SAX4BPM edge table and its textual summary as the source of truth for which graph edges are present. Identify the relevant cause -> effect relationships and explain their direction. Only report their strengths when the context says the values are non-binary coefficients.
-    - Do not infer a relationship that is absent from the SAX4BPM evidence. If no dependencies meet the minimum strength threshold, state that clearly instead of proposing unsupported causes.
-    - If the request compares derived durations or asks whether an attribute or resource causes a KPI or business outcome, use the direct statistical artifact as the primary evidence. Parent-modality SAX4BPM output is complementary process evidence and does not establish the duration-to-duration causal claim.
+    - These results are observational evidence about activity-to-activity process behavior. They do not prove an interventional causal effect and do not establish that a resource, case attribute, or external factor causes a business outcome.
+    - Summarize relevant evidence in text.
+    - Call the reported relationships "inferred causal execution dependencies" and do not present them as interventionally proven causation.
+    - Treat the causal dependency edge table and its textual summary as the source of truth for which graph edges are present. Identify the relevant cause -> effect relationships and explain their direction. Only report their strengths when the context says the values are non-binary coefficients.
+    - Do not infer a relationship that is absent from the provided causal evidence. If no dependencies meet the minimum strength threshold, state that clearly instead of proposing unsupported causes.
+    - If the request compares derived durations or asks whether an attribute or resource causes a KPI or business outcome, use the direct statistical artifact as the primary evidence. Parent-modality output is complementary process evidence and does not establish the duration-to-duration causal claim.
         """
             if causal_enabled
             else ""
@@ -140,7 +142,7 @@ class AnalystPromptBuilder:
     \n
     - Make sure to follow the strict rules introduced in the initial message (e.g., referencing artifacts by their exact keys, including the visualization if the user asked for it and it is provided, etc.) when generating your report.
     - Do NOT mention any errors or internal processing steps. Your report should be a polished analysis that directly addresses the user's request using the provided artifacts as evidence to support your conclusions.
-    - AVOID adding a dataframe/table to the report unless the user EXPLICITLY asks for it. Instead, summarize the key insights from it.
+    - Summarize relevant evidence in text.
     {causal_guidance}
     You will receive the artifacts in the consequent message.
     """
@@ -148,25 +150,21 @@ class AnalystPromptBuilder:
     @staticmethod
     def _initial_message(state: ProcessState, context: str) -> str:
         causal_enabled = state.get("causal_enabled", True)
-        causal_table_exception = (
-            ", except for a SAX4BPM causal edge table, which should be included "
-            "with its causal graph"
-            if causal_enabled
-            else ""
-        )
         causal_rules = (
             """
-    SAX4BPM CONTEXT:
-    - SAX4BPM is a causal process-discovery method that analyzes activity ordering and timestamps in an event log to infer directional execution dependencies between process activities.
+    CAUSAL DEPENDENCY ARTIFACTS:
+    - The causal dependency analysis uses activity ordering and timestamps in the event log to infer directional execution dependencies between process activities.
+    - It can return two complementary artifacts: a CSV edge table with the columns `cause_activity`, `effect_activity`, and `strength`, and a PNG graph that visualizes those same dependencies. Use both as evidence when they are provided, but include only the PNG graph as an artifact in the final report.
+    - Artifact filenames are internal implementation details. Do not reproduce their filenames or paths, and do not identify the library, framework, algorithm, academic paper, publication, or authors behind the analysis. Refer to the outputs only as the "causal dependency graph" and the "causal dependency edge table".
     - For business-activity nodes, a relationship `A -> B` means that A is the inferred cause activity and B is the inferred effect activity. Nodes named AND, OR, XOR, or `or_n` are structural gateways, not business activities.
     - Check the supplied context before interpreting `strength`. If the unified graph is binary, `strength=1` is only an edge-presence indicator: do not rank edges or call 1 a maximum effect. Only for non-binary coefficients does `strength` indicate relative strength; stronger values represent stronger evidence within the discovered model.
     - Chain modality compares activity timings relative to a shared trace anchor. Parent modality compares local activity timings relative to a preceding process anchor. Neither modality automatically constructs two user-defined elapsed-duration variables.
-    - SAX4BPM results are observational evidence about activity-to-activity process behavior. They do not prove an interventional causal effect and do not establish that a resource, case attribute, or external factor causes a business outcome.
+    - These results are observational evidence about activity-to-activity process behavior. They do not prove an interventional causal effect and do not establish that a resource, case attribute, or external factor causes a business outcome.
 
-    8. When causal artifacts are provided, include both the graph and edge table, describe their relationships as "SAX4BPM-inferred causal execution dependencies", and do not present them as interventionally proven causation.
-    9. Treat the SAX4BPM edge table and its textual summary as the source of truth for which graph edges are present. Identify the relevant cause -> effect relationships and explain their direction. Only report their strengths when the context says the values are non-binary coefficients.
-    10. Do not infer relationships absent from the SAX4BPM evidence. If no dependencies meet the minimum strength threshold, state that clearly instead of proposing unsupported causes.
-    11. SAX4BPM supports activity-to-activity timing dependencies here. If the user compares derived durations, use the direct paired-duration statistical artifact as the primary evidence and parent-modality SAX4BPM output only as complementary process context. If the user asks whether an attribute, resource, or other feature causes a KPI or business outcome, clearly explain that descriptive associations do not establish that causal claim.
+    8. When causal artifacts are provided, include the graph but never include the edge table itself. Summarize the table's relevant evidence in text, describe the relationships as "inferred causal execution dependencies", and do not present them as interventionally proven causation.
+    9. Treat the causal dependency edge table and its textual summary as the source of truth for which graph edges are present. Identify the relevant cause -> effect relationships and explain their direction. Only report their strengths when the context says the values are non-binary coefficients.
+    10. Do not infer relationships absent from the provided causal evidence. If no dependencies meet the minimum strength threshold, state that clearly instead of proposing unsupported causes.
+    11. The causal artifacts support activity-to-activity timing dependencies here. If the user compares derived durations, use the direct paired-duration statistical artifact as the primary evidence and parent-modality output only as complementary process context. If the user asks whether an attribute, resource, or other feature causes a KPI or business outcome, clearly explain that descriptive associations do not establish that causal claim.
         """
             if causal_enabled
             else ""
@@ -187,7 +185,7 @@ class AnalystPromptBuilder:
     TASK:
     Construct the `final_report` variable. Interleave your analysis with the relevant artifact keys (e.g., "artifact_0").
     - If an artifact is a visualization (PNG), use it to support your findings.
-    - If an artifact is a table (CSV), summarize the key insights in text if it's relevant. DO NOT include the dataframe in the report unless EXPLICITLY stated by user in the request{causal_table_exception}.
+    - If an artifact is a table (CSV), use it as evidence and summarize the key insights in text if relevant. NEVER include the dataframe, CSV, or table artifact in the report, even if the user explicitly requests it.
     - For visualizations, you will get an abstraction in form of a description (content of the artifact or its summary). Use it to identify if it is relevant and to support your analysis.
 
     OUTPUT FORMAT:
@@ -209,7 +207,7 @@ class AnalystPromptBuilder:
     4. You may reuse artifacts from previous iterations by referencing their keys, but you cannot introduce new artifacts that were not provided in the ARTIFACTS section.
     5. Before generating the report, carefully analyze the provided artifacts, respond after making sure you have fully utilized the available information to answer the user's request.
     6. In the text, DO NOT refer to the artifacts as "artifact_0" but rather as "the chart above", "the chart below", etc. based on the type of artifact and its relevance to the analysis.
-    7. DO NOT include dataframes in your report unless explicitly asked, instead, summarize the key insights from the dataframe in text form.{causal_table_exception}.
+    7.Summarize relevant insights in text form.
     {causal_rules}
 """
 

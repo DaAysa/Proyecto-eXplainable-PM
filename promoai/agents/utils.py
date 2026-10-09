@@ -128,7 +128,7 @@ def _check_code_for_compilation(generated_code: str):
 
 
 def code_extraction_report(
-    code_snippet: str, args, valid_artifact_ids: list, long_dfs: list
+    code_snippet: str, args, valid_artifact_ids: list, excluded_artifact_ids: list
 ):
     """
     Extracts code from a given code snippet, removing any markdown formatting.
@@ -165,9 +165,9 @@ def code_extraction_report(
             raise Exception(
                 f"Invalid type in final_report: {entry['type']}. Expected 'text' or 'artifact'."
             )
-        if entry["content"] in long_dfs:
+        if entry["content"] in excluded_artifact_ids:
             raise Exception(
-                f"The report references a dataframe artifact ({entry['content']}) that is too long to include in the report. Please summarize the dataframe instead of including it directly."
+                f"The report references a dataframe, CSV, or table artifact ({entry['content']}). Table artifacts cannot be included in the final report; summarize their relevant content in text instead."
             )
 
     return code, final_report

@@ -8,6 +8,10 @@ from promoai.agents.contracts import StructuredReport
 from promoai.agents.prompt_builders import AnalystPromptInput
 
 
+_CAUSAL_STORAGE_DESCRIPTION = "SAX4BPM causal execution dependencies"
+_CAUSAL_DISPLAY_DESCRIPTION = "Causal execution dependencies"
+
+
 @dataclass(frozen=True)
 class AgentArtifact:
     id: str
@@ -33,6 +37,13 @@ class ArtifactCatalog:
             saved_artifacts.items()
         ):
             artifact_type = cls._type_from_path(file_path)
+            display_description = str(description).strip("{}'\" ")
+            if display_description.startswith(_CAUSAL_STORAGE_DESCRIPTION):
+                display_description = display_description.replace(
+                    _CAUSAL_STORAGE_DESCRIPTION,
+                    _CAUSAL_DISPLAY_DESCRIPTION,
+                    1,
+                )
             content = (
                 "Visual representation available (PNG). Reference this key to display the chart"
                 if artifact_type == "visualization"
@@ -42,7 +53,7 @@ class ArtifactCatalog:
                 AgentArtifact(
                     id=f"artifact_{index}",
                     file_path=file_path,
-                    description=str(description).strip("{}'\" "),
+                    description=display_description,
                     content=content,
                     type=artifact_type,
                 )
@@ -65,15 +76,11 @@ class ArtifactCatalog:
         return [artifact.id for artifact in self._artifacts]
 
     @property
-    def long_dataframe_ids(self) -> list[str]:
+    def dataframe_ids(self) -> list[str]:
         return [
             artifact.id
             for artifact in self._artifacts
             if artifact.type == "dataframe"
-            and not artifact.description.startswith(
-                "SAX4BPM causal execution dependencies"
-            )
-            and len(str(artifact.content)) > 500
         ]
 
     def build_prompt_input(
@@ -85,10 +92,10 @@ class ArtifactCatalog:
             if artifact.type == "dataframe" and artifact.id not in sent_artifact_ids
         )
         dataframes += (
-            "\n \n IMPORTANT: DATAFRAMES SHOULD NOT BE INCLUDED IN THE REPORT IF "
-            "THE USER DID NOT REQUEST THEM EXPLICITLY. A SAX4BPM CAUSAL EDGE "
-            "TABLE IS THE EXCEPTION AND SHOULD BE INCLUDED WITH ITS CAUSAL "
-            "GRAPH. \n \n"
+            "\n \n IMPORTANT: NEVER INCLUDE A DATAFRAME, CSV, OR TABLE ARTIFACT "
+            "IN THE FINAL REPORT. USE IT AS EVIDENCE AND SUMMARIZE ITS RELEVANT "
+            "CONTENT IN TEXT. THIS ALSO APPLIES TO A CAUSAL DEPENDENCY EDGE "
+            "TABLE; ONLY ITS PNG GRAPH MAY BE INCLUDED AS AN ARTIFACT. \n \n"
         )
 
         visualizations = "\n".join(
@@ -106,18 +113,33 @@ class ArtifactCatalog:
 
     @staticmethod
     def _format_dataframe(artifact: AgentArtifact) -> str:
+        causal_explanation = (
+            "Interpretation: This CSV is the causal dependency edge table. "
+            "Each row describes a directed cause_activity -> effect_activity "
+            "relationship; interpret strength according to the supplied context.\n "
+            if artifact.description.startswith(_CAUSAL_DISPLAY_DESCRIPTION)
+            else ""
+        )
         return (
             f"\n =====DATAFRAME {artifact.id}======:\n "
             f"Description: {artifact.description} \n "
+            f"{causal_explanation}"
             f"Content: {artifact.content} \n "
             f"                                ======END OF {artifact.id} ====== \n\n"
         )
 
     @staticmethod
     def _format_visualization(artifact: AgentArtifact) -> str:
+        causal_explanation = (
+            "Interpretation: This PNG is the causal dependency graph and "
+            "visualizes the same directed relationships as the edge table.\n "
+            if artifact.description.startswith(_CAUSAL_DISPLAY_DESCRIPTION)
+            else ""
+        )
         return (
             f"\n =====VISUALIZATION {artifact.id}======:\n "
             f"Description: {artifact.description} \n "
+            f"{causal_explanation}"
             f"Content: {artifact.content} \n \n "
             f"======END OF {artifact.id} ====== \n\n"
         )

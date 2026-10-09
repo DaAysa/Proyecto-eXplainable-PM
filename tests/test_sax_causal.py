@@ -20,6 +20,7 @@ from promoai.agents.sax_causal import (
     validate_min_strength,
 )
 from promoai.agents.state import PMaxSession
+from promoai.agents.utils import code_extraction_report
 
 
 def _event_log(case_count=3):
@@ -162,13 +163,20 @@ class SAXCausalWrapperTests(unittest.TestCase):
         self.assertEqual(len(artifact_paths), 2)
         self.assertTrue(any(path.endswith(".csv") for path in artifact_paths))
         self.assertTrue(any(path.endswith(".png") for path in artifact_paths))
+        self.assertTrue(
+            any(
+                "sax4bpm_causal_execution_dependencies" in Path(path).name
+                for path in artifact_paths
+            )
+        )
         self.assertTrue(all(Path(path).exists() for path in artifact_paths))
         self.assertIs(self.api.event_log, self.event_log)
         self.assertTrue(
             any("observationally inferred" in item for item in self.state["context"])
         )
         causal_summary = " ".join(self.state["context"])
-        self.assertIn("SAX4BPM inferred 1 causal execution dependency", causal_summary)
+        self.assertNotIn("SAX4BPM", causal_summary)
+        self.assertIn("The analysis inferred 1 causal execution dependency", causal_summary)
         self.assertIn("A -> B (strength 0.8)", causal_summary)
         self.assertIn("A is the inferred cause activity", causal_summary)
 
@@ -300,10 +308,15 @@ class SAXCausalPromptTests(unittest.TestCase):
 
         prompt = AnalystPromptBuilder._initial_message(state, "causal artifacts")
 
-        self.assertIn("SAX4BPM-inferred causal execution dependencies", prompt)
+        self.assertNotIn("SAX4BPM", prompt)
+        self.assertIn("inferred causal execution dependencies", prompt)
         self.assertIn("interventionally proven causation", prompt)
-        self.assertIn("include both the graph and edge table", prompt)
-        self.assertIn("causal process-discovery method", prompt)
+        self.assertIn("include the graph but never include the edge table itself", prompt)
+        self.assertIn("CSV edge table", prompt)
+        self.assertIn("PNG graph", prompt)
+        self.assertIn("`cause_activity`, `effect_activity`, and `strength`", prompt)
+        self.assertIn("Do not reproduce their filenames or paths", prompt)
+        self.assertIn("academic paper", prompt)
         self.assertIn("activity ordering and timestamps", prompt)
         self.assertIn("A is the inferred cause activity", prompt)
         self.assertIn("stronger evidence within the discovered model", prompt)
@@ -328,7 +341,7 @@ class SAXCausalPromptTests(unittest.TestCase):
         self.assertNotIn("SAX4BPM", engineer_prompt)
         self.assertNotIn("SAX4BPM", analyst_prompt)
 
-    def test_causal_edge_table_is_allowed_even_when_its_preview_is_long(self):
+    def test_all_dataframes_are_excluded_from_the_final_report(self):
         catalog = ArtifactCatalog.from_saved_artifacts(
             {
                 "causal.csv": (
@@ -341,11 +354,29 @@ class SAXCausalPromptTests(unittest.TestCase):
 
         prompt_input = catalog.build_prompt_input([], [])
 
-        self.assertEqual(catalog.long_dataframe_ids, ["artifact_1"])
+        self.assertEqual(catalog.dataframe_ids, ["artifact_0", "artifact_1"])
         self.assertIn(
-            "SAX4BPM CAUSAL EDGE TABLE",
+            "NEVER INCLUDE A DATAFRAME, CSV, OR TABLE ARTIFACT",
             prompt_input.artifact_dataframe_section,
         )
+        self.assertIn(
+            "This CSV is the causal dependency edge table",
+            prompt_input.artifact_dataframe_section,
+        )
+        self.assertNotIn("SAX4BPM", prompt_input.artifact_dataframe_section)
+
+    def test_report_parser_rejects_dataframe_artifacts(self):
+        response = """```python
+final_report = [{"type": "artifact", "content": "artifact_0"}]
+```"""
+
+        with self.assertRaisesRegex(Exception, "Table artifacts cannot be included"):
+            code_extraction_report(
+                response,
+                args=None,
+                valid_artifact_ids=["artifact_0"],
+                excluded_artifact_ids=["artifact_0"],
+            )
 
 @unittest.skipUnless(
     importlib.util.find_spec("sax") is not None,

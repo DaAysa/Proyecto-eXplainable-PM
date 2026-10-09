@@ -15,7 +15,7 @@ from promoai.general_utils.llm_connection import (
 
 
 ERROR_MESSAGE_CODE_GENERATION_ANALYST = """
-Please update the model to fix the error. Make sure to save the final report in the variable 'final_report' as a list of dictionaries with keys 'type' and 'content', where 'type' can be either 'text' or 'artifact'. For artifacts, the content should be the key referencing the artifact (e.g., 'artifact_0') that you want to include in the report."""
+Please update the model to fix the error. Make sure to save the final report in the variable 'final_report' as a list of dictionaries with keys 'type' and 'content', where 'type' can be either 'text' or 'artifact'. For artifacts, the content should be the key referencing the visualization artifact (e.g., 'artifact_0') that you want to include in the report. Never include a dataframe, CSV, or table artifact; summarize its relevant content in text instead."""
 
 
 class AnalystAgent:
@@ -48,7 +48,7 @@ class AnalystAgent:
         parser = partial(
             code_extraction_report,
             valid_artifact_ids=catalog.ids,
-            long_dfs=catalog.long_dataframe_ids,
+            excluded_artifact_ids=catalog.dataframe_ids,
         )
 
         try:

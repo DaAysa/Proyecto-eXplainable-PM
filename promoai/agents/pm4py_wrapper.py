@@ -147,6 +147,15 @@ class PM4PYWrapper:
     def _add_context(self, description: str):
         self.state.add_context(description)
 
+    @staticmethod
+    def _description_for_analyst(description: str) -> str:
+        """Hide implementation names while preserving artifact descriptions on disk."""
+        return description.replace(
+            "SAX4BPM causal execution dependencies",
+            "Causal execution dependencies",
+            1,
+        )
+
     def _log_action(self, description: str):
         # Check if it already exists, if this is the case, then append it to a list
         self.state.log_action(description)
@@ -207,7 +216,9 @@ class PM4PYWrapper:
             prefix="dataframe",
         )
         self.state.update_artifacts(file_path, description, data_preview)
-        self._add_context(f"Dataframe saved: {description}")
+        self._add_context(
+            f"Dataframe saved: {self._description_for_analyst(description)}"
+        )
         artifact_df.to_csv(file_path, index=False)
         append_manifest_entry(
             self.state["artifact_session_dir"],
@@ -237,7 +248,9 @@ class PM4PYWrapper:
             prefix="visual",
         )
         self.state.update_artifacts(file_path, description, data)
-        self._add_context(f"Visualization generated: {description}")
+        self._add_context(
+            f"Visualization generated: {self._description_for_analyst(description)}"
+        )
         # Export the visualization to the specified file path
         if hasattr(fig, "savefig"):
             fig.savefig(file_path, bbox_inches="tight")
@@ -380,8 +393,9 @@ class PM4PYWrapper:
         except Exception as exc:
             self.save_dataframe(empty_edges, description)
             self._add_context(
-                "SAX4BPM could not infer activity causal execution dependencies "
-                "from the current event log. The log may contain too few suitable "
+                "The causal dependency analysis could not infer activity-level "
+                "execution dependencies from the current event log. The log may "
+                "contain too few suitable "
                 "traces or insufficient timing variation; no causal relationship "
                 "should be claimed from this result."
             )
@@ -411,17 +425,16 @@ class PM4PYWrapper:
             "shared trace anchor"
         )
         self._add_context(
-            "The causal artifacts contain SAX4BPM-inferred causal execution "
-            "dependencies between process activities, using "
-            f"{result.algorithm} and "
-            f"the {modality_explanation}, with process-order prior knowledge. "
-            "Treat them as "
+            "The returned CSV edge table and PNG graph contain inferred causal "
+            "execution dependencies between process activities, using the "
+            f"{modality_explanation}, with process-order prior knowledge. Treat "
+            "them as "
             "observationally inferred execution dependencies, not as proof of an "
             "interventional causal effect."
         )
         if result.edge_values_are_binary:
             self._add_context(
-                "The returned unified SAX4BPM graph is binary. Values of 1 in "
+                "The returned causal dependency graph is binary. Values of 1 in "
                 "the strength column are edge-presence indicators, not ranked "
                 "causal strengths. Gateway nodes such as AND, OR, XOR, and or_n "
                 "are structural nodes and must not be described as business "
@@ -465,7 +478,7 @@ class PM4PYWrapper:
                 else f"above the {threshold:g} minimum strength"
             )
             self._add_context(
-                f"SAX4BPM inferred {edge_count} causal execution "
+                f"The analysis inferred {edge_count} causal execution "
                 f"{dependency_label} {threshold_summary}. "
                 f"{relationship_intro}: {edge_summary}. In each "
                 "A -> B relation, "
