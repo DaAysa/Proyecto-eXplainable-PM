@@ -125,15 +125,8 @@ def analyze_causal_dependencies(
         if normalized_modality == "parent"
         else Modality.CHAIN
     )
-    # SAX4BPM 0.0.2 has a defect in ParentAnchorTransformer's PositiveLiNGAM
-    # branch: it checks the loop's variant string instead of the requested
-    # algorithm and can leave the algorithm variable unbound. Standard LiNGAM
-    # exercises the same parent-anchored transformation without that defect.
-    sax_algorithm = (
-        Algorithm.LINGAM
-        if normalized_modality == "parent"
-        else Algorithm.POSITIVE_LINGAM
-    )
+    
+    sax_algorithm = Algorithm.LINGAM
 
     sax_event_log = sax_process_mining.create_from_dataframe(
         dataframe,

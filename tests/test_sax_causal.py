@@ -301,6 +301,9 @@ class SAXCausalPromptTests(unittest.TestCase):
         self.assertIn("final_event_log = api.event_log", prompt)
         self.assertIn("case attribute", prompt)
         self.assertIn("business outcome or KPI", prompt)
+        self.assertIn("OfferID", prompt)
+        self.assertIn('rename_axis("statistic").reset_index()', prompt)
+        self.assertIn("Do not label descriptive associations as causal", prompt)
 
     def test_analyst_prompt_prevents_overstated_causal_claims(self):
         state = {
@@ -329,19 +332,18 @@ class SAXCausalPromptTests(unittest.TestCase):
         self.assertIn("Do not infer relationships absent", prompt)
 
     def test_disabled_causal_analysis_is_omitted_from_prompts(self):
-        state = {
-            "messages_eng": [],
-            "user_request": ["Analyze the process"],
-            "log_abstraction": "summary",
-            "causal_enabled": False,
-        }
-
-        engineer_prompt = EngineerPromptBuilder().build(state, "API summary")[0][
-            "content"
-        ]
-        analyst_prompt = AnalystPromptBuilder._initial_message(state, "context")
+        with tempfile.TemporaryDirectory() as temp_dir:
+            state = PMaxSession(
+                "Analyze the process", _event_log(), temp_dir, causal_enabled=False
+            )
+            api_summary = PM4PYWrapper(state, None).get_API_summary()
+            engineer_prompt = EngineerPromptBuilder().build(state, api_summary)[0][
+                "content"
+            ]
+            analyst_prompt = AnalystPromptBuilder._initial_message(state, "context")
 
         self.assertNotIn("SAX4BPM", engineer_prompt)
+        self.assertNotIn("discover_causal_dependencies", engineer_prompt)
         self.assertNotIn("SAX4BPM", analyst_prompt)
 
     def test_causal_artifact_prompt_does_not_direct_inclusion_or_exclusion(self):

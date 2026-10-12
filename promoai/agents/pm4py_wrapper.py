@@ -84,15 +84,16 @@ class PM4PYWrapper:
         )
         causal_method = (
             """
-           - api.discover_causal_dependencies(min_strength: float = 0.3, modality: str = "chain") -> Uses SAX4BPM to infer activity-to-activity causal execution dependencies from timing in the current filtered event log. `modality` must be `"chain"` or `"parent"`; use `"parent"` as complementary process evidence for temporal comparisons. Saves a causal graph and a compact cause/effect/strength table for the analyst. In a unified binary SAX graph, `strength=1` means that the edge is present, not that it has maximum causal strength. \n
-        """
-            if causal_enabled
-            else ""
-        )
-        causal_rules = (
-            """
-        - Use `discover_causal_dependencies` when the user asks which process activities cause, influence, or explain the timing of other process activities. It analyzes the complete current filtered log. \n
-        - SAX4BPM does not establish whether case attributes, resources, or one derived duration cause a business outcome, KPI, or another derived duration. For temporal comparisons, explicitly calculate the requested paired intervals using the correct business-object identifier, save statistical evidence for them, and use `modality="parent"` only as complementary process evidence. Do not label descriptive associations as causal. \n
+           - api.discover_causal_dependencies(min_strength: float = 0.3, modality: str = "chain") -> Uses SAX4BPM to infer directional activity-to-activity causal execution dependencies from activity ordering and timestamps in the complete current filtered `api.event_log`. These are observationally inferred dependencies, not proof of an interventional causal effect.
+             - You do not have access to SAX4BPM's source code and must not import or call the `sax` package directly. The supported interface available to you is `api.discover_causal_dependencies`.
+             - The supported modalities are `"chain"` and `"parent"`. Use `modality="parent"` when the request compares temporal quantities, elapsed durations, waiting times, or whether taking longer in one interval delays another interval. Parent modality is complementary process evidence; it does not replace calculating the requested intervals directly.
+             - This method returns no value and automatically saves two artifacts for the Analyst when available: a causal graph and a table with `cause_activity`, `effect_activity`, and `strength`. Do not recreate or save these SAX4BPM artifacts yourself. A unified SAX4BPM graph can be binary; in that case `strength=1` means only that the edge is present, not that it has maximum causal strength.
+             - You MUST call `api.discover_causal_dependencies()` whenever the user asks what activity causes, influences, explains, produces, or contributes to another activity, delay, waiting time, or process behavior. Questions phrased as "why", "what causes", "por qué", "qué causa", "influye", "provoca", or similar causal language also require this call. Do this even when previous generated code can otherwise be reused.
+             - Apply any requested filters or column normalization before calling it. If pandas preprocessing creates a new dataframe, assign it to `api.event_log` before the call so SAX4BPM analyzes the prepared log.
+             - For an activity-to-activity causal request, the minimum valid code is: `api.discover_causal_dependencies()` followed by `final_event_log = api.event_log`.
+             - For a temporal comparison, first construct both requested elapsed-time variables from correctly paired events. Pair repeated business objects with their object identifier (for example `OfferID`) rather than independently taking the first matching event in a case. Save a compact labeled dataframe containing the sample size, interval definitions, exclusions, descriptive statistics, Pearson and Spearman correlations, a regression slope, confidence interval, and p-value when they can be computed. Preserve labels from `describe()` by using `rename_axis("statistic").reset_index()` before saving. Also call `api.discover_causal_dependencies(modality="parent")` as complementary process evidence.
+             - Do not replace SAX4BPM with only a DFG, variants, correlations, averages, or descriptive charts for an activity-to-activity causal request; those analyses complement SAX4BPM but do not substitute for it. Conversely, do not use a SAX4BPM activity graph as a substitute for directly analyzing requested derived durations.
+             - SAX4BPM is limited here to activity-to-activity execution dependencies. Do not use it to claim that a case attribute, resource, derived duration, or other feature causes a business outcome or KPI, or that one derived duration causes another; compute direct associations for those questions and leave this causal limitation explicit for the analyst. Do not label descriptive associations as causal. \n
         """
             if causal_enabled
             else ""
@@ -141,7 +142,6 @@ class PM4PYWrapper:
         - Always use the save_dataframe method to save any dataframe, AVOID built-in methods in pandas. \n
         - Whenever asked to edit a process model, use the `edit_model` method which takes a textual description of the required edit, and modifies the current process model solely based on the provided textual description. \n
         - If `edit_model` fails, you can use the standard `discover_from_text` method but provide a detailed textual description of the original model (use abstraction method) and the required edit. \n
-        {causal_rules}
         """
 
     def _add_context(self, description: str):

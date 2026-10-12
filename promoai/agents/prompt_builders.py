@@ -23,23 +23,6 @@ class EngineerPromptBuilder:
     """Builds Engineer conversations without performing I/O or model calls."""
 
     def build(self, state: ProcessState, api_summary: str) -> list[dict[str, str]]:
-        causal_guidance = (
-            """
-    SAX4BPM CAUSAL ANALYSIS:
-    - SAX4BPM is a causal process-discovery method. It uses the event log's activity ordering and timestamps to infer directional execution dependencies between activities, such as activity A influencing the timing of activity B. These are observationally inferred dependencies, not proof of an interventional causal effect.
-    - You do not have access to SAX4BPM's source code and must not import or call the `sax` package directly. The supported interface available to you is `api.discover_causal_dependencies(min_strength=0.3, modality="chain")`.
-    - The supported modalities are `"chain"` and `"parent"`. Use `modality="parent"` when the request compares temporal quantities, elapsed durations, waiting times, or whether taking longer in one interval delays another interval. Parent modality is complementary process evidence; it does not replace calculating the requested intervals directly.
-    - This method analyzes `api.event_log`, returns no value, and automatically saves two artifacts for the Analyst when available: a causal graph and a table with `cause_activity`, `effect_activity`, and `strength`. Do not recreate or save these SAX4BPM artifacts yourself. A unified SAX4BPM graph can be binary; in that case `strength=1` means only that the edge is present, not that it has maximum causal strength.
-    - You MUST call `api.discover_causal_dependencies()` whenever the user asks what activity causes, influences, explains, produces, or contributes to another activity, delay, waiting time, or process behavior. Questions phrased as "why", "what causes", "por qué", "qué causa", "influye", "provoca", or similar causal language also require this call. Do this even when previous generated code can otherwise be reused.
-    - Apply any requested filters or column normalization before calling it. If pandas preprocessing creates a new dataframe, assign it to `api.event_log` before the call so SAX4BPM analyzes the prepared log.
-    - For an activity-to-activity causal request, the minimum valid code is: `api.discover_causal_dependencies()` followed by `final_event_log = api.event_log`.
-    - For a temporal comparison, first construct both requested elapsed-time variables from correctly paired events. Pair repeated business objects with their object identifier (for example `OfferID`) rather than independently taking the first matching event in a case. Save a compact labeled dataframe containing the sample size, interval definitions, exclusions, descriptive statistics, Pearson and Spearman correlations, a regression slope, confidence interval, and p-value when they can be computed. Preserve labels from `describe()` by using `rename_axis("statistic").reset_index()` before saving. Also call `api.discover_causal_dependencies(modality="parent")` as complementary process evidence.
-    - Do not replace SAX4BPM with only a DFG, variants, correlations, averages, or descriptive charts for an activity-to-activity causal request; those analyses complement SAX4BPM but do not substitute for it. Conversely, do not use a SAX4BPM activity graph as a substitute for directly analyzing requested derived durations.
-    - SAX4BPM is limited here to activity-to-activity execution dependencies. Do not use it to claim that a case attribute, resource, derived duration, or other feature causes a business outcome or KPI, or that one derived duration causes another; compute direct associations for those questions and leave this causal limitation explicit for the analyst. \n
-    """
-            if state.get("causal_enabled", True)
-            else ""
-        )
         system_message = f"""
     You are a Process Mining Data Engineer.
 
@@ -56,7 +39,6 @@ class EngineerPromptBuilder:
     IMPORTANT:
     - If the previous code you generated is able to answer the user's new request without any modifications, just return the event log without any changes.
     - MANDATORY PREPROCESSING: if the actvities or timestamps or case identifiers are not in the expected columns, you need to preprocess the log to ensure they are. You can use the API methods or pandas for this. Otherwise, you will trigger errors in the subsequent steps. \n
-    {causal_guidance}
     """
         if not state["messages_eng"]:
             return [
