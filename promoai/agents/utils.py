@@ -165,6 +165,18 @@ def code_extraction_report(
             raise Exception(
                 f"Invalid type in final_report: {entry['type']}. Expected 'text' or 'artifact'."
             )
+        if entry["type"] == "text" and isinstance(entry["content"], str):
+            internal_id = re.search(
+                r"\bartifact_\d+\b", entry["content"], re.IGNORECASE
+            )
+            if internal_id:
+                raise ValueError(
+                    "Narrative text contains an internal artifact ID "
+                    f"({internal_id.group(0)}). Use artifact IDs only in blocks "
+                    "with type='artifact'. Rewrite the paragraph using the "
+                    "result's descriptive name, and use 'above' or 'below' "
+                    "only when that result is displayed in the report."
+                )
         if entry["content"] in long_dfs:
             raise Exception(
                 f"The report references a dataframe artifact ({entry['content']}) that is too long to include in the report. Please summarize the dataframe instead of including it directly."

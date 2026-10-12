@@ -118,11 +118,12 @@ class AnalystPromptBuilder:
     final_report = [
         {{"type": "text", "content": "### Analysis of Process Distribution\\nAs requested, I have analyzed the activity distribution..."}},
         {{"type": "artifact", "content": "artifact_0"}},
-        {{"type": "text", "content": "The chart above (artifact_0) clearly shows that..."}}
+        {{"type": "text", "content": "The chart above clearly shows that..."}}
     ]
     ```
     \n
     - Make sure to follow the strict rules introduced in the initial message (e.g., referencing artifacts by their exact keys, including the visualization if the user asked for it and it is provided, etc.) when generating your report.
+    - Use artifact IDs only in the `content` field of blocks with `type="artifact"`. Never include internal artifact IDs in narrative text. Refer to results by their descriptive names, and use "above" or "below" only when that result is actually displayed in the report.
     - Do NOT mention any errors or internal processing steps. Your report should be a polished analysis that directly addresses the user's request using the provided artifacts as evidence to support your conclusions.
     - Summarize relevant evidence in text.
     {causal_guidance}
@@ -165,7 +166,7 @@ class AnalystPromptBuilder:
     - Additional Context: {context}
 
     TASK:
-    Construct the `final_report` variable. Interleave your analysis with the relevant artifact keys (e.g., "artifact_0").
+    Construct the `final_report` variable. Interleave analysis blocks with `type="text"` and result blocks with `type="artifact"`; use the relevant artifact keys only in the result blocks.
     - If an artifact is a visualization (PNG), use it to support your findings.
     - If an artifact contains tabular data, use its relevant findings to support the analysis.
     - For visualizations, you will get an abstraction in form of a description (content of the artifact or its summary). Use it to identify if it is relevant and to support your analysis.
@@ -178,17 +179,17 @@ class AnalystPromptBuilder:
     final_report = [
         {{"type": "text", "content": "### Analysis of Process Distribution\\nAs requested, I have analyzed the activity distribution..."}},
         {{"type": "artifact", "content": "artifact_0"}},
-        {{"type": "text", "content": "The chart above (artifact_0) clearly shows that..."}}
+        {{"type": "text", "content": "The chart above clearly shows that..."}}
     ]
     ```
 
     STRICT RULES:
-    1. Reference artifacts by their EXACT keys (e.g., "artifact_0").
+    1. Only in blocks with `type="artifact"`, set `content` to the artifact's EXACT key (e.g., "artifact_0").
     2. Do NOT mention any errors or internal processing steps.
     3. If the user asked for a visualization and it is provided in the ARTIFACTS section, you MUST include it in the report.
     4. You may reuse artifacts from previous iterations by referencing their keys, but you cannot introduce new artifacts that were not provided in the ARTIFACTS section.
     5. Before generating the report, carefully analyze the provided artifacts, respond after making sure you have fully utilized the available information to answer the user's request.
-    6. In the text, DO NOT refer to the artifacts as "artifact_0" but rather as "the chart above", "the chart below", etc. based on the type of artifact and its relevance to the analysis.
+    6. Never include internal artifact IDs in narrative text. Refer to results by their descriptive names, and use "above" or "below" only when that result is actually displayed in the report.
     7. DO NOT include dataframes in your report unless explicitly asked, instead, summarize the key insights from the dataframe in text form.
     {causal_rules}
 """
