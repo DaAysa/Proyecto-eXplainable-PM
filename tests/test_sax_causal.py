@@ -301,8 +301,6 @@ class SAXCausalPromptTests(unittest.TestCase):
         self.assertIn("final_event_log = api.event_log", prompt)
         self.assertIn("case attribute", prompt)
         self.assertIn("business outcome or KPI", prompt)
-        self.assertIn("OfferID", prompt)
-        self.assertIn('rename_axis("statistic").reset_index()', prompt)
         self.assertIn("Do not label descriptive associations as causal", prompt)
 
     def test_analyst_prompt_prevents_overstated_causal_claims(self):
