@@ -71,7 +71,6 @@ class AnalystPromptBuilder:
                     "content": self._follow_up_message(
                         _latest_request(state),
                         prompt_input.context,
-                        state.get("causal_enabled", True),
                     ),
                 }
             )
@@ -85,28 +84,7 @@ class AnalystPromptBuilder:
         return messages
 
     @staticmethod
-    def _follow_up_message(
-        last_request: str, context: str, causal_enabled: bool = True
-    ) -> str:
-        causal_guidance = (
-            """
-    CAUSAL DEPENDENCY ARTIFACTS:
-    - The causal dependency analysis uses activity ordering and timestamps in the event log to infer directional execution dependencies between process activities.
-    - It can return two complementary artifacts: a CSV edge table with the columns `cause_activity`, `effect_activity`, and `strength`, and a PNG graph that visualizes those same dependencies.
-    - Artifact filenames are internal implementation details. Do not reproduce their filenames or paths, and do not identify the library, framework, algorithm, academic paper, publication, or authors behind the analysis. Refer to the outputs only as the "causal dependency graph" and the "causal dependency edge table".
-    - For business-activity nodes, a relationship `A -> B` means that A is the inferred cause activity and B is the inferred effect activity. Nodes named AND, OR, XOR, or `or_n` are structural gateways, not business activities.
-    - Check the supplied context before interpreting `strength`. If the unified graph is binary, `strength=1` is only an edge-presence indicator: do not rank edges or call 1 a maximum effect. Only for non-binary coefficients does `strength` indicate relative strength; stronger values represent stronger evidence within the discovered model.
-    - Chain modality compares activity timings relative to a shared trace anchor. Parent modality compares local activity timings relative to a preceding process anchor. Neither modality automatically constructs two user-defined elapsed-duration variables.
-    - These results are observational evidence about activity-to-activity process behavior. They do not prove an interventional causal effect and do not establish that a resource, case attribute, or external factor causes a business outcome.
-    - Summarize relevant evidence in text.
-    - Call the reported relationships "inferred causal execution dependencies" and do not present them as interventionally proven causation.
-    - Treat the causal dependency edge table and its textual summary as the source of truth for which graph edges are present. Identify the relevant cause -> effect relationships and explain their direction. Only report their strengths when the context says the values are non-binary coefficients.
-    - Do not infer a relationship that is absent from the provided causal evidence. If no dependencies meet the minimum strength threshold, state that clearly instead of proposing unsupported causes.
-    - If the request compares derived durations or asks whether an attribute or resource causes a KPI or business outcome, use the direct statistical artifact as the primary evidence. Parent-modality output is complementary process evidence and does not establish the duration-to-duration causal claim.
-        """
-            if causal_enabled
-            else ""
-        )
+    def _follow_up_message(last_request: str, context: str) -> str:
         return f"""
     The Process Engineer has executed the following preprocessing steps on the event log based on the user's request "{context}":
     Please use this information to generate a report, making sure to reference artifacts that are relevant to the current user request and to support your analysis with the provided visualizations and data summaries.
@@ -126,7 +104,6 @@ class AnalystPromptBuilder:
     - Use artifact IDs only in the `content` field of blocks with `type="artifact"`. Never include internal artifact IDs in narrative text. Refer to results by their descriptive names, and use "above" or "below" only when that result is actually displayed in the report.
     - Do NOT mention any errors or internal processing steps. Your report should be a polished analysis that directly addresses the user's request using the provided artifacts as evidence to support your conclusions.
     - Summarize relevant evidence in text.
-    {causal_guidance}
     You will receive the artifacts in the consequent message.
     """
 
