@@ -11,6 +11,12 @@ from powl import convert_to_petri_net
 from powl.conversion.to_powl.from_pn.converter import convert_workflow_net_to_powl
 
 import promoai.agents.utils as utils
+from promoai.agents.sax_causal import (
+    EDGE_COLUMNS,
+    analyze_causal_dependencies,
+    validate_causal_modality,
+    validate_min_strength,
+)
 from promoai.agents.state import ProcessState
 from promoai.agents.utils import transform_dataframe_for_llms
 from promoai.general_utils.artifact_store import (
@@ -68,9 +74,32 @@ class PM4PYWrapper:
         self.state = state
         self.client = client
 
-    @staticmethod
-    def get_API_summary() -> str:
-        return """
+    def get_API_summary(self=None) -> str:
+        # Keep the former class-level call working while allowing wrapper
+        # instances to derive the feature toggle from their session state.
+        causal_enabled = (
+            self.state.get("causal_enabled", True)
+            if isinstance(self, PM4PYWrapper)
+            else True
+        )
+        causal_method = (
+            """
+           - api.discover_causal_dependencies(min_strength: float = 0.3, modality: str = "chain") -> Uses SAX4BPM to infer directional activity-to-activity causal execution dependencies from activity ordering and timestamps in the complete current filtered `api.event_log`. These are observationally inferred dependencies, not proof of an interventional causal effect.
+             - You do not have access to SAX4BPM's source code and must not import or call the `sax` package directly. The supported interface available to you is `api.discover_causal_dependencies`.
+             - The supported modalities are `"chain"` and `"parent"`. `chain` expresses activity timings relative to a shared temporal anchor within each trace to infer timing dependencies across the trace; it does not measure each activity's wait from its immediate predecessor. `parent` compares activity timings relative to a preceding activity used as a local anchor. Use `modality="parent"` when the request compares temporal quantities, elapsed durations, waiting times, or whether taking longer in one interval delays another interval. Parent modality is complementary process evidence; it does not replace calculating the requested intervals directly.
+             - `min_strength` accepts a finite number between 0 and 1, inclusive; `0.3` is the default, not a mandatory choice. For non-binary reported coefficients, lower thresholds admit weaker edges and higher thresholds exclude coefficients below the threshold: for example, an edge with coefficient `0.5` passes `min_strength=0.3` but not `min_strength=0.7`. This threshold is not a probability, confidence level, or p-value.
+             - In this integration, `min_strength` also controls the temporal-order prior knowledge used during discovery, so increasing it does not necessarily produce fewer discovered edges. In a unified binary graph, present edges have `strength=1` and pass any allowed reporting threshold; changing the threshold can still affect discovery through the temporal-order constraints. Select the modality and threshold for the requested analysis rather than always copying the defaults.
+             - This method returns no value and automatically saves two artifacts for the Analyst when available: a causal graph and a table with `cause_activity`, `effect_activity`, and `strength`. Do not recreate or save these SAX4BPM artifacts yourself. A unified SAX4BPM graph can be binary; in that case `strength=1` means only that the edge is present, not that it has maximum causal strength.
+             - You MUST call `api.discover_causal_dependencies()` whenever the user asks what activity causes, influences, explains, produces, or contributes to another activity, delay, waiting time, or process behavior. Questions phrased as "why", "what causes", "por qué", "qué causa", "influye", "provoca", or similar causal language also require this call. Do this even when previous generated code can otherwise be reused.
+             - Apply any requested filters or column normalization before calling it. If pandas preprocessing creates a new dataframe, assign it to `api.event_log` before the call so SAX4BPM analyzes the prepared log.
+             - For an activity-to-activity causal request, the minimum valid code is: `api.discover_causal_dependencies()` followed by `final_event_log = api.event_log`.
+             - Do not replace SAX4BPM with only a DFG, variants, correlations, averages, or descriptive charts for an activity-to-activity causal request; those analyses complement SAX4BPM but do not substitute for it. Conversely, do not use a SAX4BPM activity graph as a substitute for directly analyzing requested derived durations.
+             - SAX4BPM is limited here to activity-to-activity execution dependencies. Do not use it to claim that a case attribute, resource, derived duration, or other feature causes a business outcome or KPI, or that one derived duration causes another; compute direct associations for those questions and leave this causal limitation explicit for the analyst. Do not label descriptive associations as causal. \n
+        """
+            if causal_enabled
+            else ""
+        )
+        return f"""
         You have access to a variable `api` which is an instance of the Process Mining Preprocessing Engine.
 
         AVAILABLE METHODS:
@@ -87,6 +116,7 @@ class PM4PYWrapper:
 
         3. Mining & Analysis: \n
            - api.discover_process_model() -> returns nothing, updates internal state with a discovered Petri net model based on the event log and saves visualization of it. \n
+           {causal_method}
            - api.cc_alignments() -> returns conformance checking results based on alignments, i.e., a tuple of fitness, precision, F1. \n
            - api.cc_token_based_replay() -> returns conformance checking results based on token-based replay, i.e., a tuple of fitness, precision, F1. \n
            - api.discover_from_text(description : str) -> saves a Petri net (process model) as ``api.process_model`` in state of a process described with text. \n
@@ -141,18 +171,35 @@ class PM4PYWrapper:
             raise ValueError(
                 "Description for the saved dataframe cannot be empty. Please provide a meaningful description to give context to the saved dataframe."
             )
+        artifact_df = df
+        has_semantic_index = not isinstance(df.index, pd.RangeIndex) or (
+            df.index.name is not None
+        )
+        if has_semantic_index:
+            index_name = df.index.name or "statistic"
+            while index_name in df.columns:
+                index_name = f"{index_name}_index"
+            artifact_df = df.rename_axis(index_name).reset_index()
+
         # to make sure that data isn't leaked
-        potential_column_leak = len(df) == len(self.event_log)
+        potential_column_leak = len(artifact_df) == len(self.event_log)
         if potential_column_leak:
-            for col in df.columns:
-                artifact_col_sig = hash(tuple(sorted(df[col].astype(str).unique())))
+            for col in artifact_df.columns:
+                artifact_col_sig = hash(
+                    tuple(sorted(artifact_df[col].astype(str).unique()))
+                )
                 if artifact_col_sig in self._raw_column_fingerprints:
                     raise Exception(
                         f"Artifact {description} contains raw event log content in {col}. \
                                     Avoid saving raw data as artifacts, instead, focus on the analysis."
                     )
 
-        data_preview = transform_dataframe_for_llms(df)
+        is_causal_edge_table = description.startswith(
+            "Causal execution dependencies"
+        )
+        data_preview = transform_dataframe_for_llms(
+            artifact_df, include_all_rows=is_causal_edge_table
+        )
         file_path = create_managed_path(
             self.state["artifact_session_dir"],
             "dataframes",
@@ -162,7 +209,7 @@ class PM4PYWrapper:
         )
         self.state.update_artifacts(file_path, description, data_preview)
         self._add_context(f"Dataframe saved: {description}")
-        df.to_csv(file_path, index=False)
+        artifact_df.to_csv(file_path, index=False)
         append_manifest_entry(
             self.state["artifact_session_dir"],
             category="dataframes",
@@ -170,7 +217,7 @@ class PM4PYWrapper:
             description=description,
             artifact_type="dataframe",
             data_preview=data_preview,
-            extra={"rows": len(df), "columns": list(df.columns)},
+            extra={"rows": len(artifact_df), "columns": list(artifact_df.columns)},
         )
 
     def save_visualization(self, fig, description: str, data):
@@ -302,6 +349,135 @@ class PM4PYWrapper:
         net, im, fm = convert_to_petri_net(self.powl)
         self.pnet = (net, im, fm)
         self.state.save_model((net, im, fm))
+
+    def discover_causal_dependencies(
+        self, min_strength: float = 0.3, modality: str = "chain"
+    ) -> None:
+        """Save SAX4BPM activity causal-dependency evidence for the analyst."""
+        if not self.state.get("causal_enabled", True):
+            raise RuntimeError(
+                "Causal dependency analysis is disabled for this session."
+            )
+        threshold = validate_min_strength(min_strength)
+        normalized_modality = validate_causal_modality(modality)
+        description = (
+            "Causal execution dependencies "
+            f"(minimum strength {threshold:g})"
+        )
+        empty_edges = pd.DataFrame(columns=EDGE_COLUMNS)
+
+        try:
+            result = (
+                analyze_causal_dependencies(self.event_log, threshold)
+                if normalized_modality == "chain"
+                else analyze_causal_dependencies(
+                    self.event_log, threshold, modality=normalized_modality
+                )
+            )
+        except ModuleNotFoundError as exc:
+            raise RuntimeError(
+                "SAX4BPM is required for causal dependency analysis but is not installed."
+            ) from exc
+        except Exception as exc:
+            self.save_dataframe(empty_edges, description)
+            self._add_context(
+                "The causal dependency analysis could not infer activity-level "
+                "execution dependencies from the current event log. The log may "
+                "contain too few suitable "
+                "traces or insufficient timing variation; no causal relationship "
+                "should be claimed from this result."
+            )
+            self._log_action(
+                "SAX4BPM causal analysis produced no usable model "
+                f"({type(exc).__name__})."
+            )
+            return
+
+        description = (
+            "Causal execution dependencies "
+            f"({result.modality} modality; binary topology after threshold "
+            f"{threshold:g})"
+            if result.edge_values_are_binary
+            else "Causal execution dependencies "
+            f"({result.modality} modality; minimum strength {threshold:g})"
+        )
+        self.save_dataframe(result.edges, description)
+        if result.graph is not None:
+            self.save_visualization(result.graph, description, result.edges)
+
+        modality_explanation = (
+            "parent modality, which compares local activity timings relative to "
+            "their preceding process anchor"
+            if result.modality == "parent"
+            else "chain modality, which compares activity timings relative to a "
+            "shared trace anchor"
+        )
+        self._add_context(
+            "The returned CSV edge table and PNG graph contain inferred causal "
+            "execution dependencies between process activities, using the "
+            f"{modality_explanation}, with process-order prior knowledge. Treat "
+            "them as "
+            "observationally inferred execution dependencies, not as proof of an "
+            "interventional causal effect."
+        )
+        if result.edge_values_are_binary:
+            self._add_context(
+                "The returned causal dependency graph is binary. Values of 1 in "
+                "the strength column are edge-presence indicators, not ranked "
+                "causal strengths. Gateway nodes such as AND, OR, XOR, and or_n "
+                "are structural nodes and must not be described as business "
+                "activities."
+            )
+        if result.edges.empty:
+            self._add_context(
+                "No causal execution dependencies remained after applying the "
+                f"configured {threshold:g} reporting threshold."
+            )
+        else:
+            edge_count = len(result.edges)
+            dependency_label = "dependency" if edge_count == 1 else "dependencies"
+            reported_edges = result.edges.sort_values(
+                "strength", ascending=False, kind="stable"
+            ).head(10)
+            if result.edge_values_are_binary:
+                edge_summary = "; ".join(
+                    f"{row.cause_activity} -> {row.effect_activity}"
+                    for row in reported_edges.itertuples(index=False)
+                )
+                relationship_intro = "Example present edges are"
+            else:
+                edge_summary = "; ".join(
+                    f"{row.cause_activity} -> {row.effect_activity} "
+                    f"(strength {float(row.strength):.3g})"
+                    for row in reported_edges.itertuples(index=False)
+                )
+                relationship_intro = "The strongest relationships are"
+            remaining_edges = edge_count - len(reported_edges)
+            remainder_note = (
+                f" The causal edge table contains {remaining_edges} additional "
+                "dependencies."
+                if remaining_edges > 0
+                else ""
+            )
+            threshold_summary = (
+                f"in its binary unified topology after the {threshold:g} "
+                "reporting threshold"
+                if result.edge_values_are_binary
+                else f"above the {threshold:g} minimum strength"
+            )
+            self._add_context(
+                f"The analysis inferred {edge_count} causal execution "
+                f"{dependency_label} {threshold_summary}. "
+                f"{relationship_intro}: {edge_summary}. In each "
+                "A -> B relation, "
+                "A is the inferred cause activity and B is the inferred effect "
+                f"activity.{remainder_note}"
+            )
+        self._log_action(
+            "Ran SAX4BPM causal execution dependency analysis on the current "
+            f"event log ({result.node_count} graph nodes, {len(result.edges)} edges, "
+            f"{result.modality} modality, {result.algorithm} algorithm)."
+        )
 
     def cc_alignments(self, net: PNet, im, fm) -> Tuple[float, float, float]:
         fitness = pm4py.conformance_diagnostics_alignments(self.event_log, net, im, fm)

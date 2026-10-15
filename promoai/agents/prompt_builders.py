@@ -69,7 +69,8 @@ class AnalystPromptBuilder:
                 {
                     "role": "user",
                     "content": self._follow_up_message(
-                        _latest_request(state), prompt_input.context
+                        _latest_request(state),
+                        prompt_input.context,
                     ),
                 }
             )
@@ -95,18 +96,43 @@ class AnalystPromptBuilder:
     final_report = [
         {{"type": "text", "content": "### Analysis of Process Distribution\\nAs requested, I have analyzed the activity distribution..."}},
         {{"type": "artifact", "content": "artifact_0"}},
-        {{"type": "text", "content": "The chart above (artifact_0) clearly shows that..."}}
+        {{"type": "text", "content": "The chart above clearly shows that..."}}
     ]
     ```
     \n
     - Make sure to follow the strict rules introduced in the initial message (e.g., referencing artifacts by their exact keys, including the visualization if the user asked for it and it is provided, etc.) when generating your report.
+    - Use artifact IDs only in the `content` field of blocks with `type="artifact"`. Never include internal artifact IDs in narrative text. Refer to results by their descriptive names, and use "above" or "below" only when that result is actually displayed in the report.
     - Do NOT mention any errors or internal processing steps. Your report should be a polished analysis that directly addresses the user's request using the provided artifacts as evidence to support your conclusions.
-    - AVOID adding a dataframe/table to the report unless the user EXPLICITLY asks for it. Instead, summarize the key insights from it.
+    - Summarize relevant evidence in text.
     You will receive the artifacts in the consequent message.
     """
 
     @staticmethod
     def _initial_message(state: ProcessState, context: str) -> str:
+        causal_enabled = state.get("causal_enabled", True)
+        causal_rules = (
+            """
+    CAUSAL DEPENDENCY ARTIFACTS:
+    - The causal dependency analysis uses activity ordering and timestamps in the event log to infer directional execution dependencies between process activities.
+    - It can return two complementary artifacts: a CSV edge table with the columns `cause_activity`, `effect_activity`, and `strength`, and a PNG graph that visualizes those same dependencies.
+    - Use the causal dependency edge table only as internal evidence. Do not include its artifact or reproduce its rows as a table in `final_report`; display the causal dependency graph when available and explain the relevant findings in text.
+    - Artifact filenames are internal implementation details. Do not reproduce their filenames or paths, and do not identify the library, framework, algorithm, academic paper, publication, or authors behind the analysis. Refer to the outputs only as the "causal dependency graph" and the "causal dependency edge table".
+    - For business-activity nodes, a relationship `A -> B` means that A is the inferred cause activity and B is the inferred effect activity. Nodes named AND, OR, XOR, or `or_n` are structural gateways, not business activities.
+    - Gateways encode dependency patterns across variant models: XOR means alternative dependency branches, AND groups branches occurring together, OR allows inclusive combinations, and `or_n` denotes partially observed combinations. These are not executable routing rules; do not assume mutually exclusive activities, simultaneous execution, or unobserved branch combinations.
+    - Gateway labels are for internal reasoning only. Never mention AND, OR, XOR, `or_n`, numbered gateway IDs (such as `or_0` or `XOR_1`), "gateways" in narrative text. Follow their connections recursively to the actual business activities and explain the supported alternatives or combinations in everyday business language.
+    - In the conclusion, follow incoming and outgoing gateway edges and name the business activities whose inferred influences they connect; explain the alternative, grouped, or combined dependencies. Distinguish indirect paths from direct relationships. Focus on the requested target: if it is absent or has no supported incoming dependency, state that this model does not identify its earlier influences. Do not substitute similarly named activities or treat missing evidence as proof of no influence.
+    - Check the supplied context before interpreting `strength`. If the unified graph is binary, `strength=1` is only an edge-presence indicator: do not rank edges or call 1 a maximum effect. Only for non-binary coefficients does `strength` indicate relative strength; stronger values represent stronger evidence within the discovered model.
+    - Chain modality compares activity timings relative to a shared trace anchor. Parent modality compares local activity timings relative to a preceding process anchor. Neither modality automatically constructs two user-defined elapsed-duration variables.
+    - These results are observational evidence about activity-to-activity process behavior. They do not prove an interventional causal effect and do not establish that a resource, case attribute, or external factor causes a business outcome.
+
+    8. When causal artifacts are provided, describe their relationships as "inferred causal execution dependencies" and do not present them as interventionally proven causation.
+    9. Treat the causal dependency edge table and its textual summary as the source of truth for which graph edges are present. Identify the relevant cause -> effect relationships and explain their direction. Only report their strengths when the context says the values are non-binary coefficients.
+    10. Do not infer relationships absent from the provided causal evidence. If no dependencies meet the minimum strength threshold, state that clearly instead of proposing unsupported causes.
+    11. The causal artifacts support activity-to-activity timing dependencies here. If the user compares derived durations, use the direct paired-duration statistical artifact as the primary evidence and parent-modality output only as complementary process context. If the user asks whether an attribute, resource, or other feature causes a KPI or business outcome, clearly explain that descriptive associations do not establish that causal claim.
+        """
+            if causal_enabled
+            else ""
+        )
         return f"""
     You are a process analyst.
 
@@ -121,9 +147,9 @@ class AnalystPromptBuilder:
     - Additional Context: {context}
 
     TASK:
-    Construct the `final_report` variable. Interleave your analysis with the relevant artifact keys (e.g., "artifact_0").
+    Construct the `final_report` variable. Interleave analysis blocks with `type="text"` and result blocks with `type="artifact"`; use the relevant artifact keys only in the result blocks.
     - If an artifact is a visualization (PNG), use it to support your findings.
-    - If an artifact is a table (CSV), summarize the key insights in text if it's relevant. DO NOT include the dataframe in the report unless EXPLICITLY stated by user in the request.
+    - If an artifact contains tabular data, use its relevant findings to support the analysis.
     - For visualizations, you will get an abstraction in form of a description (content of the artifact or its summary). Use it to identify if it is relevant and to support your analysis.
 
     OUTPUT FORMAT:
@@ -134,18 +160,19 @@ class AnalystPromptBuilder:
     final_report = [
         {{"type": "text", "content": "### Analysis of Process Distribution\\nAs requested, I have analyzed the activity distribution..."}},
         {{"type": "artifact", "content": "artifact_0"}},
-        {{"type": "text", "content": "The chart above (artifact_0) clearly shows that..."}}
+        {{"type": "text", "content": "The chart above clearly shows that..."}}
     ]
     ```
 
     STRICT RULES:
-    1. Reference artifacts by their EXACT keys (e.g., "artifact_0").
+    1. Only in blocks with `type="artifact"`, set `content` to the artifact's EXACT key (e.g., "artifact_0").
     2. Do NOT mention any errors or internal processing steps.
     3. If the user asked for a visualization and it is provided in the ARTIFACTS section, you MUST include it in the report.
     4. You may reuse artifacts from previous iterations by referencing their keys, but you cannot introduce new artifacts that were not provided in the ARTIFACTS section.
     5. Before generating the report, carefully analyze the provided artifacts, respond after making sure you have fully utilized the available information to answer the user's request.
-    6. In the text, DO NOT refer to the artifacts as "artifact_0" but rather as "the chart above", "the chart below", etc. based on the type of artifact and its relevance to the analysis.
+    6. Never include internal artifact IDs in narrative text. Refer to results by their descriptive names, and use "above" or "below" only when that result is actually displayed in the report.
     7. DO NOT include dataframes in your report unless explicitly asked, instead, summarize the key insights from the dataframe in text form.
+    {causal_rules}
 """
 
     @staticmethod

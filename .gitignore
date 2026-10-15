@@ -136,3 +136,4 @@ uv.lock
 
 .devcontainer/
 /temp/
+/temp*
