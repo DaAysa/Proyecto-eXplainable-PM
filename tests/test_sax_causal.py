@@ -96,6 +96,8 @@ class SAXCausalAdapterTests(unittest.TestCase):
                     validate_min_strength(value)
 
     def test_maps_sax_edges_and_orders_them_by_strength(self):
+        from sax.core.causal_process_discovery.causal_constants import Algorithm, Modality
+
         model = Mock()
         model.getColumns.return_value = ["A", "B", "C"]
         sax_process_mining = SimpleNamespace(
@@ -130,8 +132,13 @@ class SAXCausalAdapterTests(unittest.TestCase):
         self.assertEqual(create_call.kwargs["activity_key"], "concept:name")
         self.assertEqual(create_call.kwargs["timestamp_key"], "time:timestamp")
         sax_causal_discovery.discover_causal_dependencies.assert_called_once_with(
-            dataObject="sax-event-log", prior_knowledge=True
+            dataObject="sax-event-log",
+            algorithm=Algorithm.LINGAM,
+            modality=Modality.CHAIN,
+            prior_knowledge=True,
+            threshold=0.4,
         )
+        self.assertEqual(result.modality, "chain")
         sax_causal_discovery.get_model_causal_representation.assert_called_once_with(
             model, p_value_threshold=0.4
         )

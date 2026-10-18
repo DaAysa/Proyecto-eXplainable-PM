@@ -12,7 +12,6 @@ CASE_ID_COLUMN = "case:concept:name"
 ACTIVITY_COLUMN = "concept:name"
 TIMESTAMP_COLUMN = "time:timestamp"
 EDGE_COLUMNS = ["cause_activity", "effect_activity", "strength"]
-SUPPORTED_MODALITIES = {"chain", "parent"}
 
 
 class SAXCausalInputError(ValueError):
@@ -39,16 +38,6 @@ def validate_min_strength(min_strength: float) -> float:
     value = float(min_strength)
     if not isfinite(value) or not 0 <= value <= 1:
         raise ValueError("min_strength must be a number between 0 and 1.")
-    return value
-
-
-def validate_causal_modality(modality: str) -> str:
-    """Validate and normalize the SAX4BPM temporal anchoring modality."""
-    if not isinstance(modality, str):
-        raise ValueError("modality must be either 'chain' or 'parent'.")
-    value = modality.strip().lower()
-    if value not in SUPPORTED_MODALITIES:
-        raise ValueError("modality must be either 'chain' or 'parent'.")
     return value
 
 
@@ -111,21 +100,13 @@ def _load_sax_modules():
 def analyze_causal_dependencies(
     event_log: Any,
     min_strength: float = 0.3,
-    modality: str = "chain",
 ) -> SAXCausalAnalysis:
     """Discover activity execution dependencies with SAX4BPM."""
     threshold = validate_min_strength(min_strength)
-    normalized_modality = validate_causal_modality(modality)
     dataframe = normalize_event_log(event_log)
     sax_process_mining, sax_causal_discovery = _load_sax_modules()
     from sax.core.causal_process_discovery.causal_constants import Algorithm, Modality
 
-    sax_modality = (
-        Modality.PARENT
-        if normalized_modality == "parent"
-        else Modality.CHAIN
-    )
-    
     sax_algorithm = Algorithm.LINGAM
 
     sax_event_log = sax_process_mining.create_from_dataframe(
@@ -138,7 +119,7 @@ def analyze_causal_dependencies(
     model = sax_causal_discovery.discover_causal_dependencies(
         dataObject=sax_event_log,
         algorithm=sax_algorithm,
-        modality=sax_modality,
+        modality=Modality.CHAIN,
         prior_knowledge=True,
         threshold=threshold,
     )
@@ -176,7 +157,7 @@ def analyze_causal_dependencies(
         edges=edges,
         graph=graph,
         node_count=len(columns),
-        modality=normalized_modality,
+        modality="chain",
         algorithm=sax_algorithm.value,
         edge_values_are_binary=edge_values_are_binary,
     )

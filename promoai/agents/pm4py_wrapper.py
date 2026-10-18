@@ -14,7 +14,6 @@ import promoai.agents.utils as utils
 from promoai.agents.sax_causal import (
     EDGE_COLUMNS,
     analyze_causal_dependencies,
-    validate_causal_modality,
     validate_min_strength,
 )
 from promoai.agents.state import ProcessState
@@ -84,11 +83,11 @@ class PM4PYWrapper:
         )
         causal_method = (
             """
-           - api.discover_causal_dependencies(min_strength: float = 0.3, modality: str = "chain") -> Uses SAX4BPM to infer directional activity-to-activity causal execution dependencies from activity ordering and timestamps in the complete current filtered `api.event_log`. These are observationally inferred dependencies, not proof of an interventional causal effect.
+           - api.discover_causal_dependencies(min_strength: float = 0.3) -> Uses SAX4BPM to infer directional activity-to-activity causal execution dependencies from activity ordering and timestamps in the complete current filtered `api.event_log`. These are observationally inferred dependencies, not proof of an interventional causal effect.
              - You do not have access to SAX4BPM's source code and must not import or call the `sax` package directly. The supported interface available to you is `api.discover_causal_dependencies`.
-             - The supported modalities are `"chain"` and `"parent"`. `chain` expresses activity timings relative to a shared temporal anchor within each trace to infer timing dependencies across the trace; it does not measure each activity's wait from its immediate predecessor. `parent` compares activity timings relative to a preceding activity used as a local anchor. Use `modality="parent"` when the request compares temporal quantities, elapsed durations, waiting times, or whether taking longer in one interval delays another interval. Parent modality is complementary process evidence; it does not replace calculating the requested intervals directly.
+             - Uses chain modality to infer timing dependencies across the trace from activity timings relative to a shared temporal anchor. For questions about elapsed durations or waiting times, calculate the requested intervals directly and use the causal graph as complementary process evidence.
              - `min_strength` accepts a finite number between 0 and 1, inclusive; `0.3` is the default, not a mandatory choice. For non-binary reported coefficients, lower thresholds admit weaker edges and higher thresholds exclude coefficients below the threshold: for example, an edge with coefficient `0.5` passes `min_strength=0.3` but not `min_strength=0.7`. This threshold is not a probability, confidence level, or p-value.
-             - In this integration, `min_strength` also controls the temporal-order prior knowledge used during discovery, so increasing it does not necessarily produce fewer discovered edges. In a unified binary graph, present edges have `strength=1` and pass any allowed reporting threshold; changing the threshold can still affect discovery through the temporal-order constraints. Select the modality and threshold for the requested analysis rather than always copying the defaults.
+             - In this integration, `min_strength` also controls the temporal-order prior knowledge used during discovery, so increasing it does not necessarily produce fewer discovered edges. In a unified binary graph, present edges have `strength=1` and pass any allowed reporting threshold; changing the threshold can still affect discovery through the temporal-order constraints. Select the threshold for the requested analysis rather than always copying the default.
              - This method returns no value and automatically saves two artifacts for the Analyst when available: a causal graph and a table with `cause_activity`, `effect_activity`, and `strength`. Do not recreate or save these SAX4BPM artifacts yourself. A unified SAX4BPM graph can be binary; in that case `strength=1` means only that the edge is present, not that it has maximum causal strength.
              - You MUST call `api.discover_causal_dependencies()` whenever the user asks what activity causes, influences, explains, produces, or contributes to another activity, delay, waiting time, or process behavior. Questions phrased as "why", "what causes", "por qué", "qué causa", "influye", "provoca", or similar causal language also require this call. Do this even when previous generated code can otherwise be reused.
              - Apply any requested filters or column normalization before calling it. If pandas preprocessing creates a new dataframe, assign it to `api.event_log` before the call so SAX4BPM analyzes the prepared log.
@@ -350,16 +349,13 @@ class PM4PYWrapper:
         self.pnet = (net, im, fm)
         self.state.save_model((net, im, fm))
 
-    def discover_causal_dependencies(
-        self, min_strength: float = 0.3, modality: str = "chain"
-    ) -> None:
+    def discover_causal_dependencies(self, min_strength: float = 0.3) -> None:
         """Save SAX4BPM activity causal-dependency evidence for the analyst."""
         if not self.state.get("causal_enabled", True):
             raise RuntimeError(
                 "Causal dependency analysis is disabled for this session."
             )
         threshold = validate_min_strength(min_strength)
-        normalized_modality = validate_causal_modality(modality)
         description = (
             "Causal execution dependencies "
             f"(minimum strength {threshold:g})"
@@ -367,13 +363,7 @@ class PM4PYWrapper:
         empty_edges = pd.DataFrame(columns=EDGE_COLUMNS)
 
         try:
-            result = (
-                analyze_causal_dependencies(self.event_log, threshold)
-                if normalized_modality == "chain"
-                else analyze_causal_dependencies(
-                    self.event_log, threshold, modality=normalized_modality
-                )
-            )
+            result = analyze_causal_dependencies(self.event_log, threshold)
         except ModuleNotFoundError as exc:
             raise RuntimeError(
                 "SAX4BPM is required for causal dependency analysis but is not installed."
@@ -405,17 +395,11 @@ class PM4PYWrapper:
         if result.graph is not None:
             self.save_visualization(result.graph, description, result.edges)
 
-        modality_explanation = (
-            "parent modality, which compares local activity timings relative to "
-            "their preceding process anchor"
-            if result.modality == "parent"
-            else "chain modality, which compares activity timings relative to a "
-            "shared trace anchor"
-        )
         self._add_context(
             "The returned CSV edge table and PNG graph contain inferred causal "
             "execution dependencies between process activities, using the "
-            f"{modality_explanation}, with process-order prior knowledge. Treat "
+            "chain modality, which compares activity timings relative to a "
+            "shared trace anchor, with process-order prior knowledge. Treat "
             "them as "
             "observationally inferred execution dependencies, not as proof of an "
             "interventional causal effect."
