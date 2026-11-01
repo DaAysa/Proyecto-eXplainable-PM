@@ -14,7 +14,11 @@ from promoai.general_utils.artifact_store import (
 )
 
 if TYPE_CHECKING:
-    from promoai.agents.contracts import AnalystResult, EngineerResult
+    from promoai.agents.contracts import (
+        AnalystResult,
+        EngineerResult,
+        VerificationResult,
+    )
 
 
 class PMaxSession(dict):
@@ -57,6 +61,7 @@ class PMaxSession(dict):
     artifact_session_dir: str
     source_log_path: str | None
     causal_enabled: bool
+    response_validation_enabled: bool
 
     def __init__(
         self,
@@ -65,10 +70,15 @@ class PMaxSession(dict):
         artifact_session_dir: str | None = None,
         source_log_path: str | None = None,
         causal_enabled: bool = True,
+        response_validation_enabled: bool = False,
     ):
         super().__init__()
         if not isinstance(causal_enabled, bool):
             raise TypeError("causal_enabled must be either True or False.")
+        if not isinstance(response_validation_enabled, bool):
+            raise TypeError(
+                "response_validation_enabled must be either True or False."
+            )
         self["user_request"] = [user_request]
         if event_log is None:
             raise ValueError(
@@ -81,6 +91,8 @@ class PMaxSession(dict):
         self["process_model"] = None
         self["source_log_path"] = source_log_path
         self["causal_enabled"] = causal_enabled
+        self["response_validation_enabled"] = response_validation_enabled
+        self["response_verification"] = None
         self["log_abstraction"] = self.generate_log_abstraction()
         self["saved_artifacts"] = {}
         self["context"] = []
@@ -136,6 +148,9 @@ class PMaxSession(dict):
         self["final_report"] = result.report
         self["sent_artifacts"].extend(result.sent_artifact_ids)
         self.flush_context()
+
+    def apply_verification_result(self, result: "VerificationResult") -> None:
+        self["response_verification"] = result.as_dict()
 
     def generate_log_abstraction(self):
         df = self["event_log"]

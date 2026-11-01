@@ -208,6 +208,25 @@ def display_chat_message(role: str, content: Union[str, List[Dict[str, str]]]):
                             )
                             df = df.head(30)
                         st.dataframe(df, use_container_width=True)
+
+                elif b_type == "verification":
+                    verification = b_val or {}
+                    answers_question = verification.get("answers_question", False)
+                    status = (
+                        "Answers the question"
+                        if answers_question
+                        else "Does not fully answer the question"
+                    )
+                    icon = "✅" if answers_question else "⚠️"
+                    with st.expander(
+                        f"{icon} Response verification: {status}", expanded=False
+                    ):
+                        st.markdown(verification.get("explanation", ""))
+                        missing_aspects = verification.get("missing_aspects", [])
+                        if missing_aspects:
+                            st.markdown("**Missing aspects:**")
+                            for aspect in missing_aspects:
+                                st.markdown(f"- {aspect}")
         else:
             st.markdown(content)
 
@@ -256,6 +275,9 @@ def chat(llm_credentials: LLMConnection):
                 source_log_path=st.session_state.get("uploaded_log_path"),
                 causal_enabled=st.session_state.get(
                     "pmax_causal_enabled", True
+                ),
+                response_validation_enabled=st.session_state.get(
+                    "pmax_response_validation_enabled", True
                 ),
             )
         else:
@@ -332,6 +354,26 @@ def chat(llm_credentials: LLMConnection):
                 return
 
             progress.write("✅ **Analyst:** report generated.")
+            if st.session_state.agent_state.get(
+                "response_validation_enabled", False
+            ):
+                progress.write(
+                    "🔎 **Verifier:** checking whether the report answers your request."
+                )
+                try:
+                    workflow.run_verifier(
+                        st.session_state.agent_state,
+                        progress_callback=show_llm_progress,
+                    )
+                    progress.write("✅ **Verifier:** response verification completed.")
+                except Exception as e:
+                    st.session_state.agent_state["response_verification"] = {
+                        "unavailable": True,
+                        "explanation": str(e),
+                    }
+                    progress.write(
+                        "⚠️ **Verifier:** verification was unavailable; the analyst report was preserved."
+                    )
             progress.update(label="Request completed", state="complete", expanded=True)
 
         report = st.session_state.agent_state["final_report"]
@@ -361,6 +403,15 @@ def chat(llm_credentials: LLMConnection):
                     "content": report,
                 },
             ]
+
+        verification = st.session_state.agent_state.get("response_verification")
+        if verification and not verification.get("unavailable", False):
+            assistant_content.append(
+                {
+                    "type": "verification",
+                    "content": verification,
+                }
+            )
 
         # Replace the same live bubble with the final content
         with assistant_placeholder.container():
@@ -395,6 +446,8 @@ def run_page():
         st.session_state["setup_complete"] = False
     if "pmax_causal_enabled" not in st.session_state:
         st.session_state["pmax_causal_enabled"] = True
+    if "pmax_response_validation_enabled" not in st.session_state:
+        st.session_state["pmax_response_validation_enabled"] = True
 
     artifact_session_dir = get_active_artifact_session_dir()
     if artifact_session_dir and ENABLE_PATH_EXPOSURE:
@@ -419,6 +472,14 @@ def run_page():
                 help=(
                     "Allow the agents to use SAX4BPM causal execution-dependency "
                     "analysis when a request calls for it."
+                ),
+            )
+            st.toggle(
+                "Enable response verification",
+                key="pmax_response_validation_enabled",
+                help=(
+                    "Use a separate verifier agent to check whether the analyst's "
+                    "report answers the question. This does not fact-check the report."
                 ),
             )
             submission_button = st.form_submit_button(label="Start Analysis")
