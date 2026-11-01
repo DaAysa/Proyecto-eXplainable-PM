@@ -42,8 +42,6 @@ class PMaxWorkflow:
         progress_callback: ProgressCallback | None = None,
     ) -> EngineerResult:
         state["verification_result"] = None
-        state["verifier_evidence"] = None
-        state["analyst_report_request"] = None
         result = self.engineer.execute(state, progress_callback)
         if hasattr(state, "apply_engineer_result"):
             state.apply_engineer_result(result)
@@ -60,7 +58,6 @@ class PMaxWorkflow:
         progress_callback: ProgressCallback | None = None,
     ) -> AnalystResult:
         state["verification_result"] = None
-        state["analyst_report_request"] = None
         result = self.analyst.execute(state, progress_callback)
         if hasattr(state, "apply_analyst_result"):
             state.apply_analyst_result(result)
@@ -69,7 +66,6 @@ class PMaxWorkflow:
             state["final_report"] = result.report
             state["sent_artifacts"].extend(result.sent_artifact_ids)
             state.flush_context()
-        state["analyst_report_request"] = len(state["user_request"])
         self.recorder.record_analyst(state, result)
         return result
 

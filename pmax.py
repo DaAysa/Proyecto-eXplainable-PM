@@ -201,8 +201,6 @@ def display_verification(result: dict | None) -> None:
                 artifact = evidence[artifact_id]
                 st.caption(f"{artifact_id}: {artifact['description']}")
                 st.code(artifact["preview"], language="text")
-                if artifact["truncated"]:
-                    st.caption("Vista parcial de la evidencia.")
         if report["suggestions"]:
             st.markdown("**Sugerencias**")
             for suggestion in report["suggestions"]:

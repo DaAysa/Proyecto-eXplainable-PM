@@ -3,16 +3,13 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import Mock, patch
+from unittest.mock import Mock
 
 import pandas as pd
-import numpy as np
 
 from promoai.agents.contracts import AnalystResult, EngineerResult, VerifierResult
-from promoai.agents.engineer import EngineerAgent
 from promoai.agents.state import PMaxSession
 from promoai.agents.verifier import (
-    MAX_EVIDENCE_CHARS,
     UNAVAILABLE_MESSAGE,
     VerifierAgent,
     build_verifier_payload,
@@ -52,16 +49,10 @@ class VerifierTests(unittest.TestCase):
         self.state["saved_artifacts"] = {
             "metric.csv": ("Tiempo promedio de A a B; todos los casos; unidad: minutos", "mean_minutes: 15")
         }
-        self.state["verifier_evidence"] = {
-            "run_id": "accepted-run", "request_index": 1,
-            "question": self.state.latest_request,
-            "artifacts": copy.deepcopy(self.state["saved_artifacts"]),
-        }
         self.state["final_report"] = [
             {"type": "text", "content": "El tiempo promedio de A a B es 15 minutos."},
             {"type": "artifact", "content": "metric.csv"},
         ]
-        self.state["analyst_report_request"] = 1
 
     def test_complete_incomplete_contradicted_and_unverifiable_cases(self):
         cases = [
@@ -72,9 +63,8 @@ class VerifierTests(unittest.TestCase):
         ]
         for addressed, status, preview, ids in cases:
             with self.subTest(addressed=addressed, status=status):
-                self.state["verifier_evidence"]["artifacts"] = (
-                    {"metric.csv": ("Tiempo promedio de A a B, minutos", preview)}
-                    if preview is not None else {}
+                self.state["saved_artifacts"]["metric.csv"] = (
+                    "Tiempo promedio de A a B, minutos", preview
                 )
                 expected = verdict(addressed=addressed, status=status, evidence_ids=ids)
                 if addressed:
@@ -97,7 +87,7 @@ class VerifierTests(unittest.TestCase):
                 self.assertEqual(self.state["final_report"], original)
                 query.assert_called_once()
                 payload = json.loads(query.call_args.args[0][1]["content"])
-                if preview is not None:
+                if preview is not None and addressed:
                     self.assertEqual(payload["evidence"][0]["preview"], preview)
                 else:
                     self.assertEqual(payload["evidence"], [])
@@ -115,7 +105,7 @@ class VerifierTests(unittest.TestCase):
         messages = query.call_args.args[0]
         self.assertEqual([message["role"] for message in messages], ["system", "user"])
         payload = json.loads(messages[1]["content"])
-        self.assertEqual(set(payload), {"question", "report", "evidence", "evidence_limits"})
+        self.assertEqual(set(payload), {"question", "report", "evidence"})
         for secret in ("SECRET_ENGINEER_HISTORY", "SECRET_ANALYST_HISTORY", "SECRET_ENGINEER_CODE",
                        "SECRET_OLD_CONTEXT", "RAW_LOG_ONLY_A", "secret-key", "metric.csv"):
             self.assertNotIn(secret, messages[1]["content"])
@@ -123,75 +113,23 @@ class VerifierTests(unittest.TestCase):
         self.assertEqual(query.call_args.kwargs["llm_name"], self.credentials.llm_name)
         self.assertEqual(query.call_args.kwargs["ai_provider"], self.credentials.ai_provider)
 
-    def test_unconfirmed_artifacts_keep_original_ids_but_are_not_evidence(self):
+    def test_only_artifacts_referenced_by_analyst_are_sent(self):
         self.state["saved_artifacts"] = {
-            "old.csv": ("Old request", "mean_minutes: 99"),
-            "failed.csv": ("Failed attempt", "mean_minutes: 22"),
-            "metric.csv": ("Accepted attempt", "mean_minutes: 15"),
-            "chart.png": ("Accepted chart", {"mean_minutes": 15}),
+            "unused.csv": ("Unused result", "UNUSED_RESULT_99"),
+            "metric.csv": ("Mean A to B, minutes", "mean_minutes: 15"),
+            "chart.png": ("Mean chart", {"mean_minutes": 15}),
         }
-        self.state["verifier_evidence"]["artifacts"]["chart.png"] = (
-            "Accepted chart", {"mean_minutes": 15}
-        )
-        self.state["final_report"].append({"type": "artifact", "content": "failed.csv"})
+        self.state["final_report"].extend([
+            {"type": "artifact", "content": "chart.png"},
+            {"type": "artifact", "content": "metric.csv"},
+        ])
 
         payload = build_verifier_payload(self.state)
 
-        self.assertEqual([item["id"] for item in payload["evidence"]], ["artifact_2", "artifact_3"])
-        self.assertEqual(payload["report"][1]["content"], "artifact_2")
-        self.assertFalse(payload["report"][2]["accepted_run"])
-        self.assertNotIn("mean_minutes: 99", json.dumps(payload))
-        self.assertNotIn("mean_minutes: 22", json.dumps(payload))
+        self.assertEqual([item["id"] for item in payload["evidence"]], ["artifact_1", "artifact_2"])
+        self.assertEqual(payload["report"][1]["content"], "artifact_1")
+        self.assertNotIn("UNUSED_RESULT_99", json.dumps(payload))
         self.assertIn("mean_minutes", payload["evidence"][1]["preview"])
-
-    def test_raw_event_log_previews_are_excluded(self):
-        raw = self.state["event_log"]
-        for data in (raw, raw.to_markdown(index=False), raw.to_dict("records"),
-                     {column: raw[column].tolist() for column in raw.columns}):
-            with self.subTest(kind=type(data).__name__):
-                self.state["verifier_evidence"]["artifacts"] = {"metric.csv": ("Raw data", data)}
-                payload = build_verifier_payload(self.state)
-                self.assertEqual(payload["evidence"], [])
-                self.assertNotIn("RAW_LOG_ONLY_A", json.dumps(payload))
-
-    def test_preview_budget_and_truncation_are_explicit(self):
-        artifacts = {f"{index}.csv": ("Computed result", "x" * 8000) for index in range(30)}
-        self.state["saved_artifacts"] = artifacts
-        self.state["verifier_evidence"]["artifacts"] = artifacts
-        payload = build_verifier_payload(self.state)
-        self.assertLessEqual(sum(len(item["preview"]) for item in payload["evidence"]), MAX_EVIDENCE_CHARS)
-        self.assertTrue(all(item["truncated"] for item in payload["evidence"]))
-        self.assertGreater(payload["evidence_limits"]["unavailable_or_omitted"], 0)
-
-    def test_computed_numpy_chart_data_and_series_are_available(self):
-        self.state["saved_artifacts"] = {
-            "chart.png": ("Mean by group, minutes", {"minutes": np.array([15.0, 12.0])}),
-            "metric.csv": ("Computed summary, minutes", pd.Series({"mean_minutes": 15.0})),
-        }
-        self.state["verifier_evidence"]["artifacts"] = copy.deepcopy(self.state["saved_artifacts"])
-        payload = build_verifier_payload(self.state)
-        self.assertEqual(len(payload["evidence"]), 2)
-        self.assertTrue(any("15.0, 12.0" in item["preview"] for item in payload["evidence"]))
-        self.assertTrue(any("mean_minutes" in item["preview"] for item in payload["evidence"]))
-
-    def test_new_request_clears_review_and_cannot_reuse_old_evidence(self):
-        self.state["verification_result"] = {"report": verdict()}
-        self.state.add_request("Ahora comparar solamente 2025")
-        self.assertIsNone(self.state["verification_result"])
-        self.assertIsNone(self.state["verifier_evidence"])
-        # A new accepted Analyst report alone does not confirm old Engineer data.
-        self.state["analyst_report_request"] = 2
-        payload = build_verifier_payload(self.state)
-        self.assertEqual(payload["evidence"], [])
-        self.assertEqual(payload["question"], "Ahora comparar solamente 2025")
-
-    def test_stale_analyst_report_is_not_reviewed(self):
-        self.state["analyst_report_request"] = None
-        query = Mock()
-        result = VerifierAgent(self.credentials, query=query).execute(self.state)
-        query.assert_not_called()
-        self.assertIsNone(result.report)
-        self.assertEqual(result.error, UNAVAILABLE_MESSAGE)
 
     def test_invalid_output_or_provider_failure_does_not_retry_or_change_report(self):
         bad_boolean = verdict()
@@ -217,31 +155,6 @@ class VerifierTests(unittest.TestCase):
         result = parse_verification("```json\n" + json.dumps(verdict()) + "\n```", {"artifact_0"})
         self.assertTrue(result["answers_question"])
 
-    def test_only_successful_engineer_attempt_is_captured(self):
-        self.state["saved_artifacts"] = {"old.csv": ("Old", "99")}
-
-        def extract(api, response, args=None):
-            if response == "failed":
-                self.state.update_artifacts("failed.csv", "Failed", "22")
-                raise ValueError("execution failed after saving an artifact")
-            self.state.update_artifacts("metric.csv", "Accepted", "15")
-            return "code", self.state["event_log"]
-
-        def generate(messages, extraction_function, **kwargs):
-            with self.assertRaises(ValueError):
-                extraction_function("failed")
-            code, log = extraction_function("accepted")
-            return code, log, messages
-
-        with patch("promoai.agents.engineer.PM4PYWrapper.code_extraction", new=extract):
-            EngineerAgent(self.credentials, result_generator=generate).execute(self.state)
-
-        self.assertEqual(set(self.state["saved_artifacts"]), {"old.csv", "failed.csv", "metric.csv"})
-        snapshot = self.state["verifier_evidence"]
-        self.assertEqual(set(snapshot["artifacts"]), {"metric.csv"})
-        self.assertEqual(snapshot["request_index"], 1)
-        self.assertEqual(snapshot["question"], self.state.latest_request)
-
     def test_workflow_orders_agents_and_persists_review_separately(self):
         order = []
         analyst_report = copy.deepcopy(self.state["final_report"])
@@ -259,7 +172,6 @@ class VerifierTests(unittest.TestCase):
         def verifier_execute(state, callback):
             order.append("Verifier")
             self.assertEqual(state["final_report"], analyst_report)
-            self.assertEqual(state["analyst_report_request"], 1)
             return review
 
         workflow = PMaxWorkflow(
