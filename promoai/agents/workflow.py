@@ -73,7 +73,10 @@ class PMaxWorkflow:
         self,
         state: ProcessState,
         progress_callback: ProgressCallback | None = None,
-    ) -> VerifierResult:
+    ) -> VerifierResult | None:
+        if not state.get("verifier_enabled", True):
+            state["verification_result"] = None
+            return None
         try:
             result = self.verifier.execute(state, progress_callback)
             if not isinstance(result, VerifierResult):

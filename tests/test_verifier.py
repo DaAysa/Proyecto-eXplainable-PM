@@ -189,6 +189,20 @@ class VerifierTests(unittest.TestCase):
         self.assertIn(analyst_report, saved)
         self.assertIn(review.to_dict(), saved)
 
+    def test_disabled_verifier_skips_agent_and_persistence(self):
+        self.state["verifier_enabled"] = False
+        self.state["verification_result"] = {"report": verdict()}
+        verifier = Mock()
+        recorder = Mock()
+        workflow = PMaxWorkflow(self.credentials, verifier=verifier, recorder=recorder)
+
+        result = workflow.run_verifier(self.state)
+
+        self.assertIsNone(result)
+        self.assertIsNone(self.state["verification_result"])
+        verifier.execute.assert_not_called()
+        recorder.record_verifier.assert_not_called()
+
     def test_workflow_keeps_report_on_verifier_and_recorder_failure(self):
         original = copy.deepcopy(self.state["final_report"])
         workflow = PMaxWorkflow(

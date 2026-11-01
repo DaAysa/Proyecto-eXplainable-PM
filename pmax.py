@@ -303,6 +303,7 @@ def chat(llm_credentials: LLMConnection):
                 causal_enabled=st.session_state.get(
                     "pmax_causal_enabled", True
                 ),
+                verifier_enabled=st.session_state.get("pmax_verifier_enabled", True),
             )
         else:
             # Add the user request to the agent state
@@ -378,15 +379,16 @@ def chat(llm_credentials: LLMConnection):
                 return
 
             progress.write("✅ **Analyst:** report generated.")
-            progress.write("🔎 **Verifier:** checking coverage and available evidence.")
-            verification = workflow.run_verifier(
-                st.session_state.agent_state,
-                progress_callback=show_llm_progress,
-            )
-            if verification.error:
-                progress.write("ℹ️ **Verifier:** review unavailable; the report is preserved.")
-            else:
-                progress.write("✅ **Verifier:** review completed.")
+            if st.session_state.agent_state.get("verifier_enabled", True):
+                progress.write("🔎 **Verifier:** checking coverage and available evidence.")
+                verification = workflow.run_verifier(
+                    st.session_state.agent_state,
+                    progress_callback=show_llm_progress,
+                )
+                if verification.error:
+                    progress.write("ℹ️ **Verifier:** review unavailable; the report is preserved.")
+                else:
+                    progress.write("✅ **Verifier:** review completed.")
             progress.update(label="Request completed", state="complete", expanded=True)
 
         report = st.session_state.agent_state["final_report"]
@@ -417,12 +419,13 @@ def chat(llm_credentials: LLMConnection):
                 },
             ]
 
-        assistant_content.append(
-            {
-                "type": "verification",
-                "content": st.session_state.agent_state.get("verification_result"),
-            }
-        )
+        if st.session_state.agent_state.get("verifier_enabled", True):
+            assistant_content.append(
+                {
+                    "type": "verification",
+                    "content": st.session_state.agent_state.get("verification_result"),
+                }
+            )
 
         # Replace the same live bubble with the final content
         with assistant_placeholder.container():
@@ -457,6 +460,8 @@ def run_page():
         st.session_state["setup_complete"] = False
     if "pmax_causal_enabled" not in st.session_state:
         st.session_state["pmax_causal_enabled"] = True
+    if "pmax_verifier_enabled" not in st.session_state:
+        st.session_state["pmax_verifier_enabled"] = True
 
     artifact_session_dir = get_active_artifact_session_dir()
     if artifact_session_dir and ENABLE_PATH_EXPOSURE:
@@ -483,8 +488,15 @@ def run_page():
                     "analysis when a request calls for it."
                 ),
             )
+            st.toggle(
+                "Enable response verification",
+                key="_pmax_verifier_enabled",
+                value=st.session_state["pmax_verifier_enabled"],
+                help="Review the Analyst response using the artifacts it references.",
+            )
             submission_button = st.form_submit_button(label="Start Analysis")
             if submission_button:
+                st.session_state["pmax_verifier_enabled"] = st.session_state["_pmax_verifier_enabled"]
                 if "llm_credentials" not in st.session_state:
                     st.error(
                         body="Please complete the setup on the main page!", icon="⚠️"
