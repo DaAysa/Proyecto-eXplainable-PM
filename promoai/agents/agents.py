@@ -70,7 +70,9 @@ def analyst_node(
     progress_callback: ProgressCallback | None = None,
 ) -> ProcessState:
     """Legacy Analyst entry point backed by the new workflow."""
-    PMaxWorkflow(LLMCredentials).run_analyst(state, progress_callback)
+    workflow = PMaxWorkflow(LLMCredentials)
+    workflow.run_analyst(state, progress_callback)
+    workflow.run_verifier(state, progress_callback)
     return state
 
 

@@ -57,6 +57,9 @@ class PMaxSession(dict):
     artifact_session_dir: str
     source_log_path: str | None
     causal_enabled: bool
+    verification_result: dict | None
+    verifier_evidence: dict | None
+    analyst_report_request: int | None
 
     def __init__(
         self,
@@ -92,6 +95,9 @@ class PMaxSession(dict):
         self["extracted_statistics"] = {}
         self["analysis_data"] = {}
         self["sent_artifacts"] = []
+        self["verification_result"] = None
+        self["verifier_evidence"] = None
+        self["analyst_report_request"] = None
         append_manifest_entry(
             self["artifact_session_dir"],
             category="session",
@@ -125,6 +131,9 @@ class PMaxSession(dict):
 
     def add_request(self, request: str) -> None:
         self["user_request"].append(request)
+        self["verification_result"] = None
+        self["verifier_evidence"] = None
+        self["analyst_report_request"] = None
 
     def apply_engineer_result(self, result: "EngineerResult") -> None:
         self["event_log"] = result.event_log

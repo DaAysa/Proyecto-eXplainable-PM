@@ -164,6 +164,51 @@ def export_messages_to_pdf(messages) -> bytes:
     return None if pisa_status.err else pdf_buffer.getvalue()
 
 
+def display_verification(result: dict | None) -> None:
+    """Render a review separately from the original Analyst report."""
+    with st.expander("Verificación de la respuesta", expanded=False):
+        report = (result or {}).get("report")
+        if report is None:
+            st.info("No se pudo completar la verificación")
+            return
+        verdict = "Sí" if report["answers_question"] else "No"
+        st.markdown(f"**¿La pregunta fue respondida?** {verdict}")
+        st.caption(
+            "Revisión automática de cobertura y respaldo en la evidencia disponible; "
+            "no constituye una garantía de veracidad."
+        )
+        st.dataframe(
+            [
+                {
+                    "Punto solicitado": item["requirement"],
+                    "Atendido": "Sí" if item["addressed"] else "No",
+                }
+                for item in report["requirements"]
+            ],
+            hide_index=True,
+            width="stretch",
+        )
+        evidence = {item["id"]: item for item in result.get("evidence", [])}
+        statuses = {
+            "supported": "Respaldada",
+            "contradicted": "Contradicha",
+            "not_verifiable": "Sin evidencia suficiente",
+        }
+        for claim in report["claims"]:
+            st.markdown(f"**{statuses[claim['status']]}:** {claim['claim']}")
+            st.write(claim["explanation"])
+            for artifact_id in claim["evidence_ids"]:
+                artifact = evidence[artifact_id]
+                st.caption(f"{artifact_id}: {artifact['description']}")
+                st.code(artifact["preview"], language="text")
+                if artifact["truncated"]:
+                    st.caption("Vista parcial de la evidencia.")
+        if report["suggestions"]:
+            st.markdown("**Sugerencias**")
+            for suggestion in report["suggestions"]:
+                st.write(f"• {suggestion}")
+
+
 def display_chat_message(role: str, content: Union[str, List[Dict[str, str]]]):
     """Renders either a simple string or structured chat blocks."""
     with st.chat_message(role):
@@ -174,6 +219,9 @@ def display_chat_message(role: str, content: Union[str, List[Dict[str, str]]]):
 
                 if b_type == "text":
                     st.markdown(b_val)
+
+                elif b_type == "verification":
+                    display_verification(b_val)
 
                 elif b_type == "code":
                     label = block.get("label", "Generated code")
@@ -332,6 +380,15 @@ def chat(llm_credentials: LLMConnection):
                 return
 
             progress.write("✅ **Analyst:** report generated.")
+            progress.write("🔎 **Verifier:** checking coverage and available evidence.")
+            verification = workflow.run_verifier(
+                st.session_state.agent_state,
+                progress_callback=show_llm_progress,
+            )
+            if verification.error:
+                progress.write("ℹ️ **Verifier:** review unavailable; the report is preserved.")
+            else:
+                progress.write("✅ **Verifier:** review completed.")
             progress.update(label="Request completed", state="complete", expanded=True)
 
         report = st.session_state.agent_state["final_report"]
@@ -361,6 +418,13 @@ def chat(llm_credentials: LLMConnection):
                     "content": report,
                 },
             ]
+
+        assistant_content.append(
+            {
+                "type": "verification",
+                "content": st.session_state.agent_state.get("verification_result"),
+            }
+        )
 
         # Replace the same live bubble with the final content
         with assistant_placeholder.container():

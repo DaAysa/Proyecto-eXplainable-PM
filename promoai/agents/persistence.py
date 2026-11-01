@@ -3,7 +3,7 @@ from __future__ import annotations
 import pandas as pd
 import pm4py
 
-from promoai.agents.contracts import AnalystResult, EngineerResult
+from promoai.agents.contracts import AnalystResult, EngineerResult, VerifierResult
 from promoai.agents.state import ProcessState
 from promoai.general_utils.artifact_store import (
     append_manifest_entry,
@@ -52,6 +52,24 @@ class AgentRunRecorder:
             description=f"Structured analyst report for request {request_index}.",
             artifact_type="report",
             extra={"entries": len(result.report)},
+        )
+
+    def record_verifier(self, state: ProcessState, result: VerifierResult) -> None:
+        request_index = len(state["user_request"])
+        path = write_json_artifact(
+            state["artifact_session_dir"],
+            "reports",
+            f"verification_request_{request_index}",
+            result.to_dict(),
+            prefix="verification",
+        )
+        append_manifest_entry(
+            state["artifact_session_dir"],
+            category="reports",
+            file_path=path,
+            description=f"Independent verification for request {request_index}.",
+            artifact_type="verification_report",
+            extra={"request_index": request_index},
         )
 
     @staticmethod
