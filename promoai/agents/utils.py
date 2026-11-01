@@ -43,11 +43,13 @@ def parse_dataframe_for_llms(file_pathway: str) -> str:
     return df.to_markdown()
 
 
-def transform_dataframe_for_llms(dataframe: pd.DataFrame) -> str:
+def transform_dataframe_for_llms(
+    dataframe: pd.DataFrame, include_all_rows: bool = False
+) -> str:
     if dataframe.empty:
         return "The artifact exists but contains no data."
     # return it as latex string encapsuled in ```latex ```
-    if len(dataframe) < 50:
+    if include_all_rows or len(dataframe) < 50:
         return f"```markdown\n{dataframe.to_markdown(index = False)}\n```"
     else:
         statistics_per_column = {
@@ -163,6 +165,18 @@ def code_extraction_report(
             raise Exception(
                 f"Invalid type in final_report: {entry['type']}. Expected 'text' or 'artifact'."
             )
+        if entry["type"] == "text" and isinstance(entry["content"], str):
+            internal_id = re.search(
+                r"\bartifact_\d+\b", entry["content"], re.IGNORECASE
+            )
+            if internal_id:
+                raise ValueError(
+                    "Narrative text contains an internal artifact ID "
+                    f"({internal_id.group(0)}). Use artifact IDs only in blocks "
+                    "with type='artifact'. Rewrite the paragraph using the "
+                    "result's descriptive name, and use 'above' or 'below' "
+                    "only when that result is displayed in the report."
+                )
         if entry["content"] in long_dfs:
             raise Exception(
                 f"The report references a dataframe artifact ({entry['content']}) that is too long to include in the report. Please summarize the dataframe instead of including it directly."

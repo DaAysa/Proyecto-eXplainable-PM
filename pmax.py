@@ -214,7 +214,7 @@ def display_chat_message(role: str, content: Union[str, List[Dict[str, str]]]):
 
 def chat(llm_credentials: LLMConnection):
     # delete old artifacts from previous sessions to save disk space
-    disk_cleanup(ARTIFACTS_ROOT, ttl=1)
+    disk_cleanup(ARTIFACTS_ROOT, ttl=3)
     if "pdf_bytes" not in st.session_state:
         st.session_state["pdf_bytes"] = None
     if "pdf_signature" not in st.session_state:
@@ -254,6 +254,9 @@ def chat(llm_credentials: LLMConnection):
                 event_log=st.session_state["uploaded_log"],
                 artifact_session_dir=artifact_session_dir,
                 source_log_path=st.session_state.get("uploaded_log_path"),
+                causal_enabled=st.session_state.get(
+                    "pmax_causal_enabled", True
+                ),
             )
         else:
             # Add the user request to the agent state
@@ -390,6 +393,8 @@ def run_page():
 
     if "setup_complete" not in st.session_state:
         st.session_state["setup_complete"] = False
+    if "pmax_causal_enabled" not in st.session_state:
+        st.session_state["pmax_causal_enabled"] = True
 
     artifact_session_dir = get_active_artifact_session_dir()
     if artifact_session_dir and ENABLE_PATH_EXPOSURE:
@@ -407,6 +412,14 @@ def run_page():
                 "For **using an agent**, upload an event log:",
                 type=["xes", "gz", "csv"],
                 max_upload_size=MAX_FILE_SIZE,
+            )
+            st.toggle(
+                "Enable causal analysis",
+                key="pmax_causal_enabled",
+                help=(
+                    "Allow the agents to use SAX4BPM causal execution-dependency "
+                    "analysis when a request calls for it."
+                ),
             )
             submission_button = st.form_submit_button(label="Start Analysis")
             if submission_button:

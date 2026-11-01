@@ -43,12 +43,14 @@ def init_state(
     event_log,
     artifact_session_dir: str | None = None,
     source_log_path: str | None = None,
+    causal_enabled: bool = True,
 ) -> ProcessState:
     return ProcessState(
         user_request=user_request,
         event_log=event_log,
         artifact_session_dir=artifact_session_dir,
         source_log_path=source_log_path,
+        causal_enabled=causal_enabled,
     )
 
 
