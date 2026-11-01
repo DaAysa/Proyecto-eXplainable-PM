@@ -44,6 +44,7 @@ def init_state(
     artifact_session_dir: str | None = None,
     source_log_path: str | None = None,
     causal_enabled: bool = True,
+    verifier_enabled: bool = True,
 ) -> ProcessState:
     return ProcessState(
         user_request=user_request,
@@ -51,6 +52,7 @@ def init_state(
         artifact_session_dir=artifact_session_dir,
         source_log_path=source_log_path,
         causal_enabled=causal_enabled,
+        verifier_enabled=verifier_enabled,
     )
 
 
@@ -70,7 +72,9 @@ def analyst_node(
     progress_callback: ProgressCallback | None = None,
 ) -> ProcessState:
     """Legacy Analyst entry point backed by the new workflow."""
-    PMaxWorkflow(LLMCredentials).run_analyst(state, progress_callback)
+    workflow = PMaxWorkflow(LLMCredentials)
+    workflow.run_analyst(state, progress_callback)
+    workflow.run_verifier(state, progress_callback)
     return state
 
 

@@ -25,6 +25,7 @@ The suite consists of two primary modules:
 - **Privacy-Preserving:** Only lightweight metadata (column names/types) is sent to the LLM. Raw event data never leaves your local environment.
 - **Deterministic Accuracy:** The system generates and executes local Python code (using whitelisted data preprocessing libraries) to compute exact metrics, avoiding LLM hallucinations.
 - **Comprehensive Reporting:** Automatically generates tables, statistical charts, and narrative insights from high-level business questions.
+- **Independent Response Review:** A **Verifier** reviews the Analyst report once, using the same configured model and provider. The collapsed **Verificación de la respuesta** panel separates question coverage from factual support and links claims to the artifacts referenced by the Analyst. The original report is preserved even if verification fails.
 
 ---
 

@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from typing import Any, Callable, Literal, Protocol, TypeAlias, TypedDict
 
 
 class ReportBlock(TypedDict, total=False):
-    type: Literal["text", "code", "artifact"]
+    type: Literal["text", "code", "artifact", "verification"]
     content: Any
     language: str
     label: str
@@ -50,12 +50,27 @@ class AnalystResult:
 
 
 @dataclass(frozen=True)
+class VerifierResult:
+    """Independent review; an unavailable review never means a negative verdict."""
+
+    report: dict[str, Any] | None = None
+    evidence: tuple[dict[str, Any], ...] = ()
+    error: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        result = asdict(self)
+        result["evidence"] = list(result["evidence"])
+        return result
+
+
+@dataclass(frozen=True)
 class PMaxWorkflowResult:
-    """Complete result of the standard Engineer -> Analyst workflow."""
+    """Complete result of the Engineer -> Analyst -> Verifier workflow."""
 
     engineer: EngineerResult
     analyst: AnalystResult
     intermediate_results: tuple[Any, ...] = ()
+    verifier: VerifierResult | None = None
 
 
 class WorkflowStep(Protocol):

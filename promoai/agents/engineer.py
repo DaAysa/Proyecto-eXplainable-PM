@@ -42,6 +42,7 @@ class EngineerAgent:
         api = PM4PYWrapper(state, LLMClient(self._credentials))
         messages = self._prompt_builder.build(state, api.get_API_summary())
         llm_args = self._llm_args(state, progress_callback)
+
         code, event_log, updated_messages = self._result_generator(
             messages,
             extraction_function=api.code_extraction,
