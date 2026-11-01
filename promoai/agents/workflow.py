@@ -6,11 +6,13 @@ from promoai.agents.contracts import (
     EngineerResult,
     PMaxWorkflowResult,
     ProgressCallback,
+    VerificationResult,
     WorkflowStep,
 )
 from promoai.agents.engineer import EngineerAgent
 from promoai.agents.persistence import AgentRunRecorder
 from promoai.agents.state import ProcessState
+from promoai.agents.verifier import VerifierAgent
 from promoai.general_utils.llm_connection import LLMConnection
 
 
@@ -22,11 +24,13 @@ class PMaxWorkflow:
         credentials: LLMConnection,
         engineer: EngineerAgent | None = None,
         analyst: AnalystAgent | None = None,
+        verifier: VerifierAgent | None = None,
         recorder: AgentRunRecorder | None = None,
         intermediate_steps: list[WorkflowStep] | None = None,
     ):
         self.engineer = engineer or EngineerAgent(credentials)
         self.analyst = analyst or AnalystAgent(credentials)
+        self.verifier = verifier or VerifierAgent(credentials)
         self.recorder = recorder or AgentRunRecorder()
         self.intermediate_steps = list(intermediate_steps or [])
 
@@ -61,6 +65,19 @@ class PMaxWorkflow:
         self.recorder.record_analyst(state, result)
         return result
 
+    def run_verifier(
+        self,
+        state: ProcessState,
+        progress_callback: ProgressCallback | None = None,
+    ) -> VerificationResult:
+        result = self.verifier.execute(state, progress_callback)
+        if hasattr(state, "apply_verification_result"):
+            state.apply_verification_result(result)
+        else:
+            state["response_verification"] = result.as_dict()
+        self.recorder.record_verifier(state, result)
+        return result
+
     def execute(
         self,
         state: ProcessState,
@@ -72,8 +89,12 @@ class PMaxWorkflow:
             for step in self.intermediate_steps
         )
         analyst_result = self.run_analyst(state, progress_callback)
+        verification_result = None
+        if state.get("response_validation_enabled", False):
+            verification_result = self.run_verifier(state, progress_callback)
         return PMaxWorkflowResult(
             engineer=engineer_result,
             analyst=analyst_result,
             intermediate_results=intermediate_results,
+            verification=verification_result,
         )

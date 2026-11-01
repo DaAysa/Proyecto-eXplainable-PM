@@ -6,9 +6,11 @@ from promoai.agents.contracts import (
     AnalystResult,
     EngineerResult,
     PMaxWorkflowResult,
+    VerificationResult,
 )
 from promoai.agents.engineer import EngineerAgent
 from promoai.agents.state import PMaxSession, ProcessState
+from promoai.agents.verifier import VerifierAgent
 from promoai.agents.workflow import PMaxWorkflow
 
 __all__ = [
@@ -21,4 +23,6 @@ __all__ = [
     "PMaxWorkflow",
     "PMaxWorkflowResult",
     "ProcessState",
+    "VerificationResult",
+    "VerifierAgent",
 ]
