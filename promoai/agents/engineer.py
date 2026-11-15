@@ -42,9 +42,30 @@ class EngineerAgent:
         api = PM4PYWrapper(state, LLMClient(self._credentials))
         messages = self._prompt_builder.build(state, api.get_API_summary())
         llm_args = self._llm_args(state, progress_callback)
+        failed_artifacts: list[str] = []
+        accepted_artifacts: list[str] = []
+
+        def tracked_extraction(response: str, args=None):
+            before = set(state["saved_artifacts"])
+            try:
+                extracted = api.code_extraction(response, args)
+            except Exception:
+                for path in state["saved_artifacts"]:
+                    if path not in before and path not in failed_artifacts:
+                        failed_artifacts.append(path)
+                raise
+            for path in state["saved_artifacts"]:
+                if (
+                    path not in before
+                    and path not in failed_artifacts
+                    and path not in accepted_artifacts
+                ):
+                    accepted_artifacts.append(path)
+            return extracted
+
         code, event_log, updated_messages = self._result_generator(
             messages,
-            extraction_function=api.code_extraction,
+            extraction_function=tracked_extraction,
             llm_name=self._credentials.llm_name,
             ai_provider=self._credentials.ai_provider,
             api_key=self._credentials.api_key,
@@ -57,6 +78,8 @@ class EngineerAgent:
             event_log=event_log,
             generated_code=code,
             messages=updated_messages,
+            accepted_artifact_paths=tuple(accepted_artifacts),
+            failed_artifact_paths=tuple(failed_artifacts),
         )
 
     def _llm_args(

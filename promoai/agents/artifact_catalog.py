@@ -17,6 +17,7 @@ class AgentArtifact:
     file_path: str
     description: str
     content: Any
+    evidence_content: Any
     type: str
 
 
@@ -48,6 +49,7 @@ class ArtifactCatalog:
                     file_path=file_path,
                     description=display_description,
                     content=content,
+                    evidence_content=data,
                     type=artifact_type,
                 )
             )
@@ -67,6 +69,10 @@ class ArtifactCatalog:
     @property
     def ids(self) -> list[str]:
         return [artifact.id for artifact in self._artifacts]
+
+    @property
+    def artifacts(self) -> tuple[AgentArtifact, ...]:
+        return tuple(self._artifacts)
 
     @property
     def long_dataframe_ids(self) -> list[str]:

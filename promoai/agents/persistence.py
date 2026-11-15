@@ -5,6 +5,7 @@ import pm4py
 
 from promoai.agents.contracts import (
     AnalystResult,
+    EvidenceCheckResult,
     EngineerResult,
     VerificationResult,
 )
@@ -57,6 +58,26 @@ class AgentRunRecorder:
             artifact_type="report",
             extra={"entries": len(result.report)},
         )
+        if result.evidence_snapshot is not None:
+            evidence_path = write_json_artifact(
+                state["artifact_session_dir"],
+                "evidence",
+                f"analyst_evidence_request_{request_index}",
+                result.evidence_snapshot,
+                prefix="analyst_evidence",
+            )
+            append_manifest_entry(
+                state["artifact_session_dir"],
+                category="evidence",
+                file_path=evidence_path,
+                description=f"Evidence visible to the Analyst for request {request_index}.",
+                artifact_type="analyst_evidence",
+                extra={
+                    "request_index": request_index,
+                    "artifacts": len(result.evidence_snapshot.get("artifacts", [])),
+                    "context_entries": len(result.evidence_snapshot.get("context", [])),
+                },
+            )
 
     def record_verifier(
         self, state: ProcessState, result: VerificationResult
@@ -76,6 +97,30 @@ class AgentRunRecorder:
             description=f"Response verification for request {request_index}.",
             artifact_type="response_verification",
             extra={"answers_question": result.answers_question},
+        )
+
+    def record_evidence_check(
+        self, state: ProcessState, result: EvidenceCheckResult
+    ) -> None:
+        request_index = state.get("active_request_index", len(state["user_request"]))
+        result_path = write_json_artifact(
+            state["artifact_session_dir"],
+            "reports",
+            f"evidence_check_request_{request_index}",
+            result.as_dict(),
+            prefix="evidence_check",
+        )
+        append_manifest_entry(
+            state["artifact_session_dir"],
+            category="reports",
+            file_path=result_path,
+            description=f"Evidence check for request {request_index}.",
+            artifact_type="evidence_check",
+            extra={
+                "request_index": request_index,
+                "confidence": result.confidence,
+                "claims": len(result.claims),
+            },
         )
 
     @staticmethod
