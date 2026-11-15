@@ -42,9 +42,22 @@ class EngineerAgent:
         api = PM4PYWrapper(state, LLMClient(self._credentials))
         messages = self._prompt_builder.build(state, api.get_API_summary())
         llm_args = self._llm_args(state, progress_callback)
+        failed_artifacts: set[str] = set()
+        successful_artifacts: set[str] = set()
+
+        def tracked_extraction(response: str, args=None):
+            before = set(state["saved_artifacts"])
+            try:
+                extracted = api.code_extraction(response, args)
+            except Exception:
+                failed_artifacts.update(set(state["saved_artifacts"]) - before)
+                raise
+            successful_artifacts.update(set(state["saved_artifacts"]) - before)
+            return extracted
+
         code, event_log, updated_messages = self._result_generator(
             messages,
-            extraction_function=api.code_extraction,
+            extraction_function=tracked_extraction,
             llm_name=self._credentials.llm_name,
             ai_provider=self._credentials.ai_provider,
             api_key=self._credentials.api_key,
@@ -53,6 +66,11 @@ class EngineerAgent:
             additional_iterations=self._retry_policy.fallback_attempts,
             standard_error_message=ERROR_MESSAGE_CODE_GENERATION_ENG,
         )
+        request_index = len(state["user_request"])
+        state.setdefault("engineer_artifact_attempts", {})[str(request_index)] = {
+            "successful": sorted(successful_artifacts),
+            "failed": sorted(failed_artifacts - successful_artifacts),
+        }
         return EngineerResult(
             event_log=event_log,
             generated_code=code,

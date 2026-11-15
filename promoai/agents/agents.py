@@ -12,6 +12,7 @@ from typing import List
 from promoai.agents.analyst import AnalystAgent
 from promoai.agents.contracts import ProgressCallback
 from promoai.agents.engineer import EngineerAgent
+from promoai.agents.evidence_checker import EvidenceCheckerAgent
 from promoai.agents.prompt_builders import AnalystPromptBuilder
 from promoai.agents.state import ProcessState
 from promoai.agents.workflow import PMaxWorkflow
@@ -20,6 +21,7 @@ from promoai.general_utils.llm_connection import LLMConnection
 __all__ = [
     "AnalystAgent",
     "EngineerAgent",
+    "EvidenceCheckerAgent",
     "PMaxWorkflow",
     "ProcessState",
     "analyst_node",
@@ -45,6 +47,7 @@ def init_state(
     source_log_path: str | None = None,
     causal_enabled: bool = True,
     response_validation_enabled: bool = False,
+    evidence_validation_enabled: bool = False,
 ) -> ProcessState:
     return ProcessState(
         user_request=user_request,
@@ -53,6 +56,7 @@ def init_state(
         source_log_path=source_log_path,
         causal_enabled=causal_enabled,
         response_validation_enabled=response_validation_enabled,
+        evidence_validation_enabled=evidence_validation_enabled,
     )
 
 

@@ -5,6 +5,7 @@ import pm4py
 
 from promoai.agents.contracts import (
     AnalystResult,
+    EvidenceCheckResult,
     EngineerResult,
     VerificationResult,
 )
@@ -58,6 +59,30 @@ class AgentRunRecorder:
             extra={"entries": len(result.report)},
         )
 
+    def record_analyst_evidence(
+        self, state: ProcessState, snapshot: dict
+    ) -> None:
+        request_index = snapshot["request_index"]
+        snapshot_path = write_json_artifact(
+            state["artifact_session_dir"],
+            "evidence",
+            f"analyst_evidence_request_{request_index}",
+            snapshot,
+            prefix="evidence",
+        )
+        append_manifest_entry(
+            state["artifact_session_dir"],
+            category="evidence",
+            file_path=snapshot_path,
+            description=f"Analyst evidence snapshot for request {request_index}.",
+            artifact_type="analyst_evidence_snapshot",
+            extra={
+                "request_index": request_index,
+                "artifacts": len(snapshot.get("artifacts", [])),
+                "context_entries": len(snapshot.get("context", [])),
+            },
+        )
+
     def record_verifier(
         self, state: ProcessState, result: VerificationResult
     ) -> None:
@@ -76,6 +101,26 @@ class AgentRunRecorder:
             description=f"Response verification for request {request_index}.",
             artifact_type="response_verification",
             extra={"answers_question": result.answers_question},
+        )
+
+    def record_evidence_check(
+        self, state: ProcessState | dict, result: EvidenceCheckResult
+    ) -> None:
+        request_index = len(state["user_request"])
+        result_path = write_json_artifact(
+            state["artifact_session_dir"],
+            "reports",
+            f"evidence_check_request_{request_index}",
+            result.as_dict(),
+            prefix="evidence_check",
+        )
+        append_manifest_entry(
+            state["artifact_session_dir"],
+            category="reports",
+            file_path=result_path,
+            description=f"Evidence check for request {request_index}.",
+            artifact_type="evidence_check",
+            extra={"confidence": result.confidence},
         )
 
     @staticmethod

@@ -227,6 +227,43 @@ def display_chat_message(role: str, content: Union[str, List[Dict[str, str]]]):
                             st.markdown("**Missing aspects:**")
                             for aspect in missing_aspects:
                                 st.markdown(f"- {aspect}")
+
+                elif b_type == "evidence_check":
+                    evidence_check = b_val or {}
+                    confidence = evidence_check.get("confidence", "low")
+                    icon = {"high": "✅", "medium": "🟡", "low": "⚠️"}.get(
+                        confidence, "⚠️"
+                    )
+                    with st.expander(
+                        f"{icon} Evidence check: {confidence.title()} confidence",
+                        expanded=False,
+                    ):
+                        st.markdown(evidence_check.get("summary", ""))
+                        st.markdown("**Question coverage**")
+                        for part in evidence_check.get("question_parts", []):
+                            line = f"- **{part.get('status', 'unanswered')}** — {part.get('text', '')}"
+                            if part.get("probable_cause"):
+                                line += f" (`{part['probable_cause']}`)"
+                            st.markdown(line)
+                        st.markdown("**Claims**")
+                        for claim in evidence_check.get("claims", []):
+                            st.markdown(
+                                f"- **{claim.get('status', 'unsupported')}** — {claim.get('text', '')}"
+                            )
+                            if claim.get("explanation"):
+                                st.caption(claim["explanation"])
+                            citation = claim.get("citation")
+                            if citation:
+                                location = citation.get("artifact_id") or citation.get(
+                                    "source_type", "evidence"
+                                )
+                                if citation.get("row") is not None:
+                                    location += f", row {citation['row']}"
+                                if citation.get("column"):
+                                    location += f", column {citation['column']}"
+                                if citation.get("value") is not None:
+                                    location += f", value {citation['value']}"
+                                st.caption(f"Evidence: {location}")
         else:
             st.markdown(content)
 
@@ -278,6 +315,9 @@ def chat(llm_credentials: LLMConnection):
                 ),
                 response_validation_enabled=st.session_state.get(
                     "pmax_response_validation_enabled", True
+                ),
+                evidence_validation_enabled=st.session_state.get(
+                    "pmax_evidence_validation_enabled", True
                 ),
             )
         else:
@@ -374,6 +414,28 @@ def chat(llm_credentials: LLMConnection):
                     progress.write(
                         "⚠️ **Verifier:** verification was unavailable; the analyst report was preserved."
                     )
+            if st.session_state.agent_state.get(
+                "evidence_validation_enabled", False
+            ):
+                progress.write(
+                    "🧾 **EvidenceChecker:** checking the report against the available evidence."
+                )
+                try:
+                    workflow.run_evidence_checker(
+                        st.session_state.agent_state,
+                        progress_callback=show_llm_progress,
+                    )
+                    progress.write(
+                        "✅ **EvidenceChecker:** evidence verification completed."
+                    )
+                except Exception as e:
+                    st.session_state.agent_state["evidence_check"] = {
+                        "unavailable": True,
+                        "explanation": str(e),
+                    }
+                    progress.write(
+                        "⚠️ **EvidenceChecker:** evidence verification was unavailable; the analyst report was preserved."
+                    )
             progress.update(label="Request completed", state="complete", expanded=True)
 
         report = st.session_state.agent_state["final_report"]
@@ -413,6 +475,15 @@ def chat(llm_credentials: LLMConnection):
                 }
             )
 
+        evidence_check = st.session_state.agent_state.get("evidence_check")
+        if evidence_check and not evidence_check.get("unavailable", False):
+            assistant_content.append(
+                {
+                    "type": "evidence_check",
+                    "content": evidence_check,
+                }
+            )
+
         # Replace the same live bubble with the final content
         with assistant_placeholder.container():
             display_chat_message("assistant", assistant_content)
@@ -448,6 +519,8 @@ def run_page():
         st.session_state["pmax_causal_enabled"] = True
     if "pmax_response_validation_enabled" not in st.session_state:
         st.session_state["pmax_response_validation_enabled"] = True
+    if "pmax_evidence_validation_enabled" not in st.session_state:
+        st.session_state["pmax_evidence_validation_enabled"] = True
 
     artifact_session_dir = get_active_artifact_session_dir()
     if artifact_session_dir and ENABLE_PATH_EXPOSURE:
@@ -480,6 +553,14 @@ def run_page():
                 help=(
                     "Use a separate verifier agent to check whether the analyst's "
                     "report answers the question. This does not fact-check the report."
+                ),
+            )
+            st.toggle(
+                "Enable evidence verification",
+                key="pmax_evidence_validation_enabled",
+                help=(
+                    "Use a separate evidence checker to verify that the analyst's "
+                    "claims are supported by the artifacts and context it received."
                 ),
             )
             submission_button = st.form_submit_button(label="Start Analysis")
