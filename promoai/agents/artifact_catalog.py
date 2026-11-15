@@ -18,6 +18,7 @@ class AgentArtifact:
     description: str
     content: Any
     type: str
+    evidence_content: Any = None
 
 
 class ArtifactCatalog:
@@ -49,6 +50,7 @@ class ArtifactCatalog:
                     description=display_description,
                     content=content,
                     type=artifact_type,
+                    evidence_content=data,
                 )
             )
         return cls(artifacts)
@@ -67,6 +69,10 @@ class ArtifactCatalog:
     @property
     def ids(self) -> list[str]:
         return [artifact.id for artifact in self._artifacts]
+
+    @property
+    def artifacts(self) -> tuple[AgentArtifact, ...]:
+        return tuple(self._artifacts)
 
     @property
     def long_dataframe_ids(self) -> list[str]:

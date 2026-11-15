@@ -514,6 +514,7 @@ def query_llm(
     llm_args: Optional[dict] = None,
 ) -> str:
     trace_session_dir = _resolve_trace_session_dir(llm_args)
+    provider_args, _ = _split_llm_args(llm_args)
     if ai_provider == AIProviders.GOOGLE.value:
         return generate_response_with_history_google(
             conversation,
@@ -521,6 +522,7 @@ def query_llm(
             llm_name,
             trace_session_dir=trace_session_dir,
             provider_name=ai_provider,
+            provider_args=provider_args,
         )
     elif ai_provider == AIProviders.ANTHROPIC.value:
         return generate_response_with_history_anthropic(
@@ -529,6 +531,7 @@ def query_llm(
             llm_name,
             trace_session_dir=trace_session_dir,
             provider_name=ai_provider,
+            provider_args=provider_args,
         )
     elif ai_provider == AIProviders.COHERE.value:
         return generate_response_with_history_cohere(
@@ -537,6 +540,7 @@ def query_llm(
             llm_name,
             trace_session_dir=trace_session_dir,
             provider_name=ai_provider,
+            provider_args=provider_args,
         )
     else:
         use_responses_api_openai = False
@@ -804,6 +808,7 @@ def generate_response_with_history_google(
     *,
     trace_session_dir: Optional[str] = None,
     provider_name: str = AIProviders.GOOGLE.value,
+    provider_args: Optional[dict[str, Any]] = None,
 ) -> str:
     request_payload: Optional[dict[str, Any]] = None
     request_path: Optional[str] = None
@@ -816,13 +821,19 @@ def generate_response_with_history_google(
         system_instruction, contents = _to_gemini_contents_and_system(
             conversation_history
         )
+        effective_args = dict(provider_args or {})
+        effective_args.pop("END_POINT", None)
         config = genai.types.GenerateContentConfig(
             system_instruction=system_instruction,
+            **effective_args,
         )
         request_payload = {
             "model": google_model,
             "contents": contents,
-            "config": {"system_instruction": system_instruction},
+            "config": {
+                "system_instruction": system_instruction,
+                **effective_args,
+            },
         }
         request_path = _persist_llm_request_trace(
             trace_session_dir or create_analysis_session("llm"),
@@ -831,12 +842,8 @@ def generate_response_with_history_google(
             request_payload,
             conversation_history=conversation_history,
         )
-        response = (
-            client.models.generate_content(
-                model=google_model, contents=contents, config=config
-            )
-            if system_instruction
-            else client.models.generate_content(model=google_model, contents=contents)
+        response = client.models.generate_content(
+            model=google_model, contents=contents, config=config
         )
         response_payload = _to_jsonable(response)
 
@@ -925,6 +932,7 @@ def generate_response_with_history_anthropic(
     *,
     trace_session_dir: Optional[str] = None,
     provider_name: str = AIProviders.ANTHROPIC.value,
+    provider_args: Optional[dict[str, Any]] = None,
 ) -> str:
     try:
         import anthropic
@@ -935,10 +943,13 @@ def generate_response_with_history_anthropic(
 
     try:
         client = anthropic.Anthropic(api_key=api_key)
+        effective_args = dict(provider_args or {})
+        effective_args.pop("END_POINT", None)
         request_payload = {
             "model": llm_name,
             "max_tokens": 8192,
             "messages": conversation,
+            **effective_args,
         }
         request_path = _persist_llm_request_trace(
             trace_session_dir or create_analysis_session("llm"),
@@ -947,11 +958,7 @@ def generate_response_with_history_anthropic(
             request_payload,
             conversation_history=conversation,
         )
-        message = client.messages.create(
-            model=llm_name,
-            max_tokens=8192,
-            messages=conversation,
-        )
+        message = client.messages.create(**request_payload)
         response_text = message.content[0].text  # type: ignore[index]
         _persist_llm_response_trace(
             trace_session_dir or create_analysis_session("llm"),
@@ -1025,10 +1032,14 @@ def generate_response_with_history_cohere(
     *,
     trace_session_dir: Optional[str] = None,
     provider_name: str = AIProviders.COHERE.value,
+    provider_args: Optional[dict[str, Any]] = None,
 ) -> str:
+    effective_args = dict(provider_args or {})
+    effective_args.pop("END_POINT", None)
     request_payload = {
         "model": llm_name,
         "messages": conversation,
+        **effective_args,
     }
     request_path = _persist_llm_request_trace(
         trace_session_dir or create_analysis_session("llm"),
@@ -1039,7 +1050,7 @@ def generate_response_with_history_cohere(
     )
     try:
         client = cohere.ClientV2(api_key)
-        response = client.chat(model=llm_name, messages=conversation)
+        response = client.chat(**request_payload)
     except Exception as e:
         _persist_llm_response_trace(
             trace_session_dir or create_analysis_session("llm"),
