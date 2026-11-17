@@ -5,6 +5,7 @@ from typing import Callable
 
 from promoai.agents.artifact_catalog import ArtifactCatalog
 from promoai.agents.contracts import AgentRetryPolicy, AnalystResult, ProgressCallback
+from promoai.agents.evidence import capture_analyst_evidence
 from promoai.agents.prompt_builders import AnalystPromptBuilder
 from promoai.agents.state import ProcessState
 from promoai.agents.utils import code_extraction_report
@@ -40,6 +41,7 @@ class AnalystAgent:
         state: ProcessState,
         progress_callback: ProgressCallback | None = None,
     ) -> AnalystResult:
+        evidence_snapshot = capture_analyst_evidence(state)
         catalog = ArtifactCatalog.from_saved_artifacts(state["saved_artifacts"])
         prompt_input = catalog.build_prompt_input(
             state["sent_artifacts"], state["context"]
@@ -72,6 +74,7 @@ class AnalystAgent:
             generated_code=report_code,
             messages=updated_messages,
             sent_artifact_ids=tuple(catalog.ids),
+            evidence_snapshot=evidence_snapshot,
         )
 
     def _llm_args(

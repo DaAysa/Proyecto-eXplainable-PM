@@ -45,6 +45,7 @@ def init_state(
     source_log_path: str | None = None,
     causal_enabled: bool = True,
     response_validation_enabled: bool = False,
+    evidence_check_enabled: bool = False,
 ) -> ProcessState:
     return ProcessState(
         user_request=user_request,
@@ -53,6 +54,7 @@ def init_state(
         source_log_path=source_log_path,
         causal_enabled=causal_enabled,
         response_validation_enabled=response_validation_enabled,
+        evidence_check_enabled=evidence_check_enabled,
     )
 
 

@@ -137,3 +137,4 @@ uv.lock
 .devcontainer/
 /temp/
 /temp*
+/tests/fixtures/temp_session_*/

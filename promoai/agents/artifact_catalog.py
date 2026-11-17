@@ -65,6 +65,10 @@ class ArtifactCatalog:
         )
 
     @property
+    def artifacts(self) -> tuple[AgentArtifact, ...]:
+        return tuple(self._artifacts)
+
+    @property
     def ids(self) -> list[str]:
         return [artifact.id for artifact in self._artifacts]
 

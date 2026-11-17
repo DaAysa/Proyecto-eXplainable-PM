@@ -5,7 +5,7 @@ from typing import Any, Callable, Literal, Protocol, TypeAlias, TypedDict
 
 
 class ReportBlock(TypedDict, total=False):
-    type: Literal["text", "code", "artifact", "verification"]
+    type: Literal["text", "code", "artifact", "verification", "evidence_check"]
     content: Any
     language: str
     label: str
@@ -47,6 +47,7 @@ class AnalystResult:
     generated_code: str
     messages: list[AgentMessage]
     sent_artifact_ids: tuple[str, ...]
+    evidence_snapshot: dict[str, Any] | None = None
 
 
 @dataclass(frozen=True)
@@ -66,13 +67,32 @@ class VerificationResult:
 
 
 @dataclass(frozen=True)
+class EvidenceCheckResult:
+    claims: tuple[dict[str, Any], ...]
+    question_parts: tuple[dict[str, Any], ...]
+    confidence: str
+    confidence_rule: str
+    provenance: str
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "claims": list(self.claims),
+            "question_parts": list(self.question_parts),
+            "confidence": self.confidence,
+            "confidence_rule": self.confidence_rule,
+            "provenance": self.provenance,
+        }
+
+
+@dataclass(frozen=True)
 class PMaxWorkflowResult:
-    """Complete result of the Engineer -> Analyst -> optional Verifier workflow."""
+    """Complete result of Engineer, Analyst and the optional checking agents."""
 
     engineer: EngineerResult
     analyst: AnalystResult
     intermediate_results: tuple[Any, ...] = ()
     verification: VerificationResult | None = None
+    evidence_check: EvidenceCheckResult | None = None
 
 
 class WorkflowStep(Protocol):
