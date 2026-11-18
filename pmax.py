@@ -227,6 +227,69 @@ def display_chat_message(role: str, content: Union[str, List[Dict[str, str]]]):
                             st.markdown("**Missing aspects:**")
                             for aspect in missing_aspects:
                                 st.markdown(f"- {aspect}")
+
+                elif b_type == "evidence_check":
+                    evidence_check = b_val or {}
+                    if evidence_check.get("unavailable", False):
+                        with st.expander(
+                            "⚠️ Evidence check: unavailable", expanded=False
+                        ):
+                            st.markdown(evidence_check.get("explanation", ""))
+                        continue
+                    confidence = evidence_check.get("confidence", "low")
+                    confidence_labels = {
+                        "high": ("✅", "High confidence"),
+                        "medium": ("⚠️", "Medium confidence"),
+                        "low": ("❌", "Low confidence"),
+                    }
+                    icon, label = confidence_labels.get(
+                        confidence, ("⚠️", str(confidence).title())
+                    )
+                    with st.expander(
+                        f"{icon} Evidence check: {label}", expanded=False
+                    ):
+                        st.markdown(
+                            evidence_check.get("confidence_explanation", "")
+                        )
+                        parts = evidence_check.get("question_parts", [])
+                        if parts:
+                            st.markdown("**Question coverage**")
+                            for part in parts:
+                                line = f"- **{part.get('status', '').replace('_', ' ').title()}** — {part.get('text', '')}"
+                                if part.get("data_type"):
+                                    line += f" (`{part['data_type']}`)"
+                                if part.get("unanswered_cause"):
+                                    line += f" — `{part['unanswered_cause']}`"
+                                st.markdown(line)
+                        claims = evidence_check.get("claims", [])
+                        if claims:
+                            st.markdown("**Claims**")
+                            claim_icons = {
+                                "supported": "✅",
+                                "contradicted": "❌",
+                                "unsupported": "⚠️",
+                                "non_verifiable": "ℹ️",
+                            }
+                            for claim in claims:
+                                status = claim.get("status", "unsupported")
+                                st.markdown(
+                                    f"{claim_icons.get(status, '•')} **{status.replace('_', ' ').title()}:** "
+                                    f"{claim.get('text', '')}"
+                                )
+                                if claim.get("explanation"):
+                                    st.caption(claim["explanation"])
+                                for location in claim.get("evidence", []):
+                                    source = location.get("artifact_id") or location.get(
+                                        "source_id", "evidence"
+                                    )
+                                    detail = f"{source}"
+                                    if location.get("row") is not None:
+                                        detail += f", row {location['row']}"
+                                    if location.get("column"):
+                                        detail += f", column `{location['column']}`"
+                                    if location.get("value") is not None:
+                                        detail += f", value `{location['value']}`"
+                                    st.caption(f"Evidence: {detail}")
         else:
             st.markdown(content)
 
@@ -278,6 +341,9 @@ def chat(llm_credentials: LLMConnection):
                 ),
                 response_validation_enabled=st.session_state.get(
                     "pmax_response_validation_enabled", True
+                ),
+                evidence_check_enabled=st.session_state.get(
+                    "pmax_evidence_check_enabled", True
                 ),
             )
         else:
@@ -374,6 +440,26 @@ def chat(llm_credentials: LLMConnection):
                     progress.write(
                         "⚠️ **Verifier:** verification was unavailable; the analyst report was preserved."
                     )
+            if st.session_state.agent_state.get("evidence_check_enabled", False):
+                progress.write(
+                    "🧾 **EvidenceChecker:** checking the report against its evidence."
+                )
+                try:
+                    workflow.run_evidence_checker(
+                        st.session_state.agent_state,
+                        progress_callback=show_llm_progress,
+                    )
+                    progress.write(
+                        "✅ **EvidenceChecker:** evidence check completed."
+                    )
+                except Exception as e:
+                    st.session_state.agent_state["evidence_check"] = {
+                        "unavailable": True,
+                        "explanation": str(e),
+                    }
+                    progress.write(
+                        "⚠️ **EvidenceChecker:** evidence checking was unavailable; the analyst report was preserved."
+                    )
             progress.update(label="Request completed", state="complete", expanded=True)
 
         report = st.session_state.agent_state["final_report"]
@@ -413,6 +499,15 @@ def chat(llm_credentials: LLMConnection):
                 }
             )
 
+        evidence_check = st.session_state.agent_state.get("evidence_check")
+        if evidence_check:
+            assistant_content.append(
+                {
+                    "type": "evidence_check",
+                    "content": evidence_check,
+                }
+            )
+
         # Replace the same live bubble with the final content
         with assistant_placeholder.container():
             display_chat_message("assistant", assistant_content)
@@ -448,6 +543,8 @@ def run_page():
         st.session_state["pmax_causal_enabled"] = True
     if "pmax_response_validation_enabled" not in st.session_state:
         st.session_state["pmax_response_validation_enabled"] = True
+    if "pmax_evidence_check_enabled" not in st.session_state:
+        st.session_state["pmax_evidence_check_enabled"] = True
 
     artifact_session_dir = get_active_artifact_session_dir()
     if artifact_session_dir and ENABLE_PATH_EXPOSURE:
@@ -480,6 +577,14 @@ def run_page():
                 help=(
                     "Use a separate verifier agent to check whether the analyst's "
                     "report answers the question. This does not fact-check the report."
+                ),
+            )
+            st.toggle(
+                "Enable evidence checking",
+                key="pmax_evidence_check_enabled",
+                help=(
+                    "Use a separate EvidenceChecker agent to verify that the "
+                    "analyst's claims are supported by the evidence it received."
                 ),
             )
             submission_button = st.form_submit_button(label="Start Analysis")

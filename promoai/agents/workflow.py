@@ -3,6 +3,7 @@ from __future__ import annotations
 from promoai.agents.analyst import AnalystAgent
 from promoai.agents.contracts import (
     AnalystResult,
+    EvidenceCheckResult,
     EngineerResult,
     PMaxWorkflowResult,
     ProgressCallback,
@@ -10,6 +11,7 @@ from promoai.agents.contracts import (
     WorkflowStep,
 )
 from promoai.agents.engineer import EngineerAgent
+from promoai.agents.evidence_checker import EvidenceCheckerAgent
 from promoai.agents.persistence import AgentRunRecorder
 from promoai.agents.state import ProcessState
 from promoai.agents.verifier import VerifierAgent
@@ -25,12 +27,14 @@ class PMaxWorkflow:
         engineer: EngineerAgent | None = None,
         analyst: AnalystAgent | None = None,
         verifier: VerifierAgent | None = None,
+        evidence_checker: EvidenceCheckerAgent | None = None,
         recorder: AgentRunRecorder | None = None,
         intermediate_steps: list[WorkflowStep] | None = None,
     ):
         self.engineer = engineer or EngineerAgent(credentials)
         self.analyst = analyst or AnalystAgent(credentials)
         self.verifier = verifier or VerifierAgent(credentials)
+        self.evidence_checker = evidence_checker or EvidenceCheckerAgent(credentials)
         self.recorder = recorder or AgentRunRecorder()
         self.intermediate_steps = list(intermediate_steps or [])
 
@@ -46,6 +50,14 @@ class PMaxWorkflow:
             state["event_log"] = result.event_log
             state["log_abstraction"] = state.generate_log_abstraction()
             state["messages_eng"] = result.messages
+            ineligible = state.setdefault("ineligible_evidence_artifacts", [])
+            for path in result.failed_artifact_paths:
+                if path not in ineligible:
+                    ineligible.append(path)
+            provenance = state.setdefault("artifact_provenance", {})
+            request_index = len(state["user_request"])
+            for path in (*result.failed_artifact_paths, *result.accepted_artifact_paths):
+                provenance.setdefault(path, request_index)
         self.recorder.record_engineer(state, result)
         return result
 
@@ -61,6 +73,10 @@ class PMaxWorkflow:
             state["messages_ana"] = result.messages
             state["final_report"] = result.report
             state["sent_artifacts"].extend(result.sent_artifact_ids)
+            if result.evidence_snapshot is not None:
+                state.setdefault("analyst_evidence_history", []).append(
+                    result.evidence_snapshot
+                )
             state.flush_context()
         self.recorder.record_analyst(state, result)
         return result
@@ -78,6 +94,22 @@ class PMaxWorkflow:
         self.recorder.record_verifier(state, result)
         return result
 
+    def run_evidence_checker(
+        self,
+        state: ProcessState,
+        progress_callback: ProgressCallback | None = None,
+    ) -> EvidenceCheckResult:
+        result = self.evidence_checker.execute(state, progress_callback)
+        if hasattr(state, "apply_evidence_check_result"):
+            state.apply_evidence_check_result(result)
+        else:
+            payload = result.as_dict()
+            state["evidence_check"] = payload
+            request_index = state.get("active_request_index", len(state["user_request"]))
+            state.setdefault("evidence_checks", {})[request_index] = payload
+        self.recorder.record_evidence_check(state, result)
+        return result
+
     def execute(
         self,
         state: ProcessState,
@@ -91,10 +123,26 @@ class PMaxWorkflow:
         analyst_result = self.run_analyst(state, progress_callback)
         verification_result = None
         if state.get("response_validation_enabled", False):
-            verification_result = self.run_verifier(state, progress_callback)
+            try:
+                verification_result = self.run_verifier(state, progress_callback)
+            except Exception as exc:
+                state["response_verification"] = {
+                    "unavailable": True,
+                    "explanation": str(exc),
+                }
+        evidence_result = None
+        if state.get("evidence_check_enabled", False):
+            try:
+                evidence_result = self.run_evidence_checker(state, progress_callback)
+            except Exception as exc:
+                state["evidence_check"] = {
+                    "unavailable": True,
+                    "explanation": str(exc),
+                }
         return PMaxWorkflowResult(
             engineer=engineer_result,
             analyst=analyst_result,
             intermediate_results=intermediate_results,
             verification=verification_result,
+            evidence_check=evidence_result,
         )

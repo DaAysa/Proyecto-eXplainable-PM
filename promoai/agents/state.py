@@ -16,6 +16,7 @@ from promoai.general_utils.artifact_store import (
 if TYPE_CHECKING:
     from promoai.agents.contracts import (
         AnalystResult,
+        EvidenceCheckResult,
         EngineerResult,
         VerificationResult,
     )
@@ -62,6 +63,7 @@ class PMaxSession(dict):
     source_log_path: str | None
     causal_enabled: bool
     response_validation_enabled: bool
+    evidence_check_enabled: bool
 
     def __init__(
         self,
@@ -71,6 +73,7 @@ class PMaxSession(dict):
         source_log_path: str | None = None,
         causal_enabled: bool = True,
         response_validation_enabled: bool = False,
+        evidence_check_enabled: bool = True,
     ):
         super().__init__()
         if not isinstance(causal_enabled, bool):
@@ -79,6 +82,8 @@ class PMaxSession(dict):
             raise TypeError(
                 "response_validation_enabled must be either True or False."
             )
+        if not isinstance(evidence_check_enabled, bool):
+            raise TypeError("evidence_check_enabled must be either True or False.")
         self["user_request"] = [user_request]
         if event_log is None:
             raise ValueError(
@@ -92,7 +97,13 @@ class PMaxSession(dict):
         self["source_log_path"] = source_log_path
         self["causal_enabled"] = causal_enabled
         self["response_validation_enabled"] = response_validation_enabled
+        self["evidence_check_enabled"] = evidence_check_enabled
         self["response_verification"] = None
+        self["evidence_check"] = None
+        self["evidence_checks"] = {}
+        self["analyst_evidence_history"] = []
+        self["artifact_provenance"] = {}
+        self["ineligible_evidence_artifacts"] = []
         self["log_abstraction"] = self.generate_log_abstraction()
         self["saved_artifacts"] = {}
         self["context"] = []
@@ -142,15 +153,33 @@ class PMaxSession(dict):
         self["event_log"] = result.event_log
         self["log_abstraction"] = self.generate_log_abstraction()
         self["messages_eng"] = result.messages
+        request_index = len(self["user_request"])
+        ineligible = self.setdefault("ineligible_evidence_artifacts", [])
+        for path in result.failed_artifact_paths:
+            if path not in ineligible:
+                ineligible.append(path)
+        provenance = self.setdefault("artifact_provenance", {})
+        for path in (*result.failed_artifact_paths, *result.accepted_artifact_paths):
+            provenance.setdefault(path, request_index)
 
     def apply_analyst_result(self, result: "AnalystResult") -> None:
         self["messages_ana"] = result.messages
         self["final_report"] = result.report
         self["sent_artifacts"].extend(result.sent_artifact_ids)
+        if result.evidence_snapshot is not None:
+            self.setdefault("analyst_evidence_history", []).append(
+                result.evidence_snapshot
+            )
         self.flush_context()
 
     def apply_verification_result(self, result: "VerificationResult") -> None:
         self["response_verification"] = result.as_dict()
+
+    def apply_evidence_check_result(self, result: "EvidenceCheckResult") -> None:
+        payload = result.as_dict()
+        request_index = len(self["user_request"])
+        self["evidence_check"] = payload
+        self.setdefault("evidence_checks", {})[request_index] = payload
 
     def generate_log_abstraction(self):
         df = self["event_log"]

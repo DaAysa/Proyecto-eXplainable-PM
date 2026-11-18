@@ -514,6 +514,8 @@ def query_llm(
     llm_args: Optional[dict] = None,
 ) -> str:
     trace_session_dir = _resolve_trace_session_dir(llm_args)
+    provider_args, _ = _split_llm_args(llm_args)
+    temperature = provider_args.get("temperature")
     if ai_provider == AIProviders.GOOGLE.value:
         return generate_response_with_history_google(
             conversation,
@@ -521,6 +523,7 @@ def query_llm(
             llm_name,
             trace_session_dir=trace_session_dir,
             provider_name=ai_provider,
+            temperature=temperature,
         )
     elif ai_provider == AIProviders.ANTHROPIC.value:
         return generate_response_with_history_anthropic(
@@ -529,6 +532,7 @@ def query_llm(
             llm_name,
             trace_session_dir=trace_session_dir,
             provider_name=ai_provider,
+            temperature=temperature,
         )
     elif ai_provider == AIProviders.COHERE.value:
         return generate_response_with_history_cohere(
@@ -537,6 +541,7 @@ def query_llm(
             llm_name,
             trace_session_dir=trace_session_dir,
             provider_name=ai_provider,
+            temperature=temperature,
         )
     else:
         use_responses_api_openai = False
@@ -804,6 +809,7 @@ def generate_response_with_history_google(
     *,
     trace_session_dir: Optional[str] = None,
     provider_name: str = AIProviders.GOOGLE.value,
+    temperature: float | None = None,
 ) -> str:
     request_payload: Optional[dict[str, Any]] = None
     request_path: Optional[str] = None
@@ -816,13 +822,18 @@ def generate_response_with_history_google(
         system_instruction, contents = _to_gemini_contents_and_system(
             conversation_history
         )
-        config = genai.types.GenerateContentConfig(
-            system_instruction=system_instruction,
+        config_args: dict[str, Any] = {}
+        if system_instruction:
+            config_args["system_instruction"] = system_instruction
+        if temperature is not None:
+            config_args["temperature"] = temperature
+        config = (
+            genai.types.GenerateContentConfig(**config_args) if config_args else None
         )
         request_payload = {
             "model": google_model,
             "contents": contents,
-            "config": {"system_instruction": system_instruction},
+            "config": config_args,
         }
         request_path = _persist_llm_request_trace(
             trace_session_dir or create_analysis_session("llm"),
@@ -835,7 +846,7 @@ def generate_response_with_history_google(
             client.models.generate_content(
                 model=google_model, contents=contents, config=config
             )
-            if system_instruction
+            if config is not None
             else client.models.generate_content(model=google_model, contents=contents)
         )
         response_payload = _to_jsonable(response)
@@ -925,6 +936,7 @@ def generate_response_with_history_anthropic(
     *,
     trace_session_dir: Optional[str] = None,
     provider_name: str = AIProviders.ANTHROPIC.value,
+    temperature: float | None = None,
 ) -> str:
     try:
         import anthropic
@@ -940,6 +952,8 @@ def generate_response_with_history_anthropic(
             "max_tokens": 8192,
             "messages": conversation,
         }
+        if temperature is not None:
+            request_payload["temperature"] = temperature
         request_path = _persist_llm_request_trace(
             trace_session_dir or create_analysis_session("llm"),
             provider_name,
@@ -947,10 +961,9 @@ def generate_response_with_history_anthropic(
             request_payload,
             conversation_history=conversation,
         )
+        request_args = dict(request_payload)
         message = client.messages.create(
-            model=llm_name,
-            max_tokens=8192,
-            messages=conversation,
+            **request_args,
         )
         response_text = message.content[0].text  # type: ignore[index]
         _persist_llm_response_trace(
@@ -1025,11 +1038,14 @@ def generate_response_with_history_cohere(
     *,
     trace_session_dir: Optional[str] = None,
     provider_name: str = AIProviders.COHERE.value,
+    temperature: float | None = None,
 ) -> str:
     request_payload = {
         "model": llm_name,
         "messages": conversation,
     }
+    if temperature is not None:
+        request_payload["temperature"] = temperature
     request_path = _persist_llm_request_trace(
         trace_session_dir or create_analysis_session("llm"),
         provider_name,
@@ -1039,7 +1055,7 @@ def generate_response_with_history_cohere(
     )
     try:
         client = cohere.ClientV2(api_key)
-        response = client.chat(model=llm_name, messages=conversation)
+        response = client.chat(**request_payload)
     except Exception as e:
         _persist_llm_response_trace(
             trace_session_dir or create_analysis_session("llm"),
