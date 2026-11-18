@@ -16,14 +16,14 @@ from promoai.general_utils.llm_connection import LLMConnection, query_llm
 DATA_TYPES = {
     "time", "frequency", "structure", "conformance", "causal", "prediction", "data_quality"
 }
-CLAIM_STATUSES = {"respaldada", "contradicha", "sin respaldo", "no verificable"}
-COVERAGE_STATUSES = {"respondida", "parcial", "sin responder"}
+CLAIM_STATUSES = {"supported", "contradicted", "unsupported", "non_verifiable"}
+COVERAGE_STATUSES = {"answered", "partial", "unanswered"}
 CONFIDENCE_RULE = (
-    "Alta si todas las partes están respondidas, hay afirmaciones factuales y todas están "
-    "respaldadas con citas válidas, con confirmación por código de las citas numéricas en CSV. "
-    "Media si ninguna parte está sin responder, no hay contradicciones y al menos la mitad "
-    "de las afirmaciones factuales están respaldadas, o solo se pidieron recomendaciones. "
-    "Baja en los demás casos. Opiniones y recomendaciones se excluyen del denominador."
+    "High when every question part is answered, factual claims are present, and all are "
+    "supported by valid citations, with numeric CSV citations confirmed by code. "
+    "Medium when no part is unanswered, there are no contradictions, and at least half "
+    "of the factual claims are supported, or only recommendations were requested. "
+    "Low otherwise. Opinions and recommendations are excluded from the denominator."
 )
 
 
@@ -172,7 +172,7 @@ class EvidenceCheckerAgent:
                     "location": evaluated.get("location"),
                 }
                 if claim["kind"] != "fact":
-                    item.update(status="no verificable", location=None)
+                    item.update(status="non_verifiable", location=None)
                 else:
                     self._confirm_claim(item, selected, tables)
                 claims.append(item)
@@ -189,10 +189,10 @@ class EvidenceCheckerAgent:
                 "available_evidence": available,
                 "probable_cause": None,
             }
-            if coverage["status"] == "sin responder":
+            if coverage["status"] == "unanswered":
                 part_result["probable_cause"] = (
-                    "El Analyst no usó evidencia que tenía el dato."
-                    if available else "El Engineer no generó evidencia con ese dato."
+                    "The Analyst did not use available evidence containing the answer."
+                    if available else "The Engineer did not generate evidence containing the answer."
                 )
             parts.append(part_result)
         confidence = self._confidence(claims, parts)
@@ -223,7 +223,9 @@ Select every potentially relevant source, including context, to detect data that
 Time requires duration/timestamp metrics, frequency counts/proportions, structure variants/edges,
 conformance fitness/precision, causal causal dependencies, prediction model evaluations, data_quality quality metrics.
 Descriptive correlations do not establish causality. A chart description is not proof of a measured value.
-Do not select unrelated sources. Do not assess grounding yet. Use the user's language for text you generate.'''
+Do not select unrelated sources. Do not assess grounding yet.
+Write all generated questions and explanations in English, regardless of the user's or evidence's language.
+Keep JSON keys and status values exactly as specified. Preserve verbatim claim excerpts, dataset identifiers and source values.'''
 
     @staticmethod
     def _assessment_prompt() -> str:
@@ -234,19 +236,21 @@ For missing rows or values request JSON {"lookups":[{"source_id":"q1/artifact_0"
 Filters are exact column/value matches. Empty filters page the table. Each page has at most 25 rows, with 1-based data row numbers.
 There are four lookup rounds. Request only columns and rows relevant to this part.
 When ready return only JSON
-{"claims":[{"id":"c1","status":"respaldada","explanation":"reason","location":{"source_id":"q1/artifact_0","row":2,"column":"mean","value":"12.3456","evidence_unit":"number"}}],
-"coverage":{"status":"respondida","explanation":"reason"},"available_evidence":[]}
-Return exactly one result for each supplied claim, preserving its id. Status is respaldada, contradicha, sin respaldo or no verificable.
-Opinions and recommendations are no verificable even when written in a table. Evaluate their factual premises as separate claims.
+{"claims":[{"id":"c1","status":"supported","explanation":"reason","location":{"source_id":"q1/artifact_0","row":2,"column":"mean","value":"12.3456","evidence_unit":"number"}}],
+"coverage":{"status":"answered","explanation":"reason"},"available_evidence":[]}
+Return exactly one result for each supplied claim, preserving its id. Status is supported, contradicted, unsupported or non_verifiable.
+Opinions and recommendations are non_verifiable even when written in a table. Evaluate their factual premises as separate claims.
 For each factual claim give the exact supporting or contradicting source, row, column and source value, or location null.
 Numeric citations need the precise column and row. Copy the cell value, preserving its precision when possible.
 evidence_unit is number, fraction or percentage, describing the CSV cell's unit.
 For context use 1-based text line number, column null and an exact excerpt as value.
 Visualizations offer only their supplied description/summary, not image pixels. Cite a table or context for quantitative facts.
 Use additional lookups to find relevant missing evidence before declaring it absent.
-coverage is respondida, parcial or sin responder and measures whether the response addresses the whole part, including requested recommendations.
+coverage is answered, partial or unanswered and measures whether the response addresses the whole part, including requested recommendations.
 available_evidence lists exact locations containing the requested data, especially when the Analyst omitted it.
-Coverage and factual grounding are separate judgments. Use the user's language for explanations.'''
+Coverage and factual grounding are separate judgments.
+Write all explanations in English, regardless of the user's or evidence's language.
+Keep JSON keys and status values exactly as specified. Preserve dataset identifiers and quoted source values.'''
 
     @staticmethod
     def _validate_plan(plan, sources, report):
@@ -438,11 +442,11 @@ Coverage and factual grounding are separate judgments. Use the user's language f
     def _confirm_claim(self, claim, selected, tables):
         location = self._validate_location(claim.get("location"), selected, tables)
         claim["location"] = location
-        if claim["status"] == "no verificable":
-            claim["status"] = "sin respaldo"
+        if claim["status"] == "non_verifiable":
+            claim["status"] = "unsupported"
         if location is None:
-            claim["status"] = "sin respaldo"
-            claim["explanation"] += " No se encontró una cita válida en la evidencia seleccionada."
+            claim["status"] = "unsupported"
+            claim["explanation"] += " No valid citation was found in the selected evidence."
             return
         if selected[location["source_id"]]["kind"] != "table":
             return
@@ -450,8 +454,8 @@ Coverage and factual grounding are separate judgments. Use the user's language f
             actual, _, _ = parse_number(location["value"])
         except ValueError:
             if claim.get("claimed_value") is not None:
-                claim["status"] = "sin respaldo"
-                claim["explanation"] += " La celda citada no contiene un valor numérico comparable."
+                claim["status"] = "unsupported"
+                claim["explanation"] += " The cited cell does not contain a comparable numeric value."
             return
         if claim.get("claimed_value") is None:
             # Qualitative comparisons remain semantic judgments, without numeric confirmation.
@@ -471,23 +475,23 @@ Coverage and factual grounding are separate judgments. Use the user's language f
         }
         # Numerical agreement cannot override an adverse semantic assessment.
         if not matched:
-            claim["status"] = "contradicha"
-            claim["explanation"] += " El valor citado difiere del CSV completo más allá del redondeo permitido."
+            claim["status"] = "contradicted"
+            claim["explanation"] += " The cited value differs from the full CSV beyond the allowed rounding tolerance."
 
     @staticmethod
     def _confidence(claims, parts):
         factual = [item for item in claims if item["kind"] == "fact"]
-        supported = sum(item["status"] == "respaldada" for item in factual)
-        all_answered = all(part["status"] == "respondida" for part in parts)
-        none_unanswered = all(part["status"] != "sin responder" for part in parts)
-        has_contradiction = any(item["status"] == "contradicha" for item in factual)
+        supported = sum(item["status"] == "supported" for item in factual)
+        all_answered = all(part["status"] == "answered" for part in parts)
+        none_unanswered = all(part["status"] != "unanswered" for part in parts)
+        has_contradiction = any(item["status"] == "contradicted" for item in factual)
         if factual and supported == len(factual) and all_answered:
-            return "alta"
+            return "high"
         if none_unanswered and not has_contradiction and (
             not factual or supported / len(factual) >= 0.5
         ):
-            return "media"
-        return "baja"
+            return "medium"
+        return "low"
 
     def _call(self, system, payload, state, callback, stage):
         return self._call_messages([

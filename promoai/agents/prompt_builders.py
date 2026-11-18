@@ -26,6 +26,8 @@ class EngineerPromptBuilder:
         system_message = f"""
     You are a Process Mining Data Engineer.
 
+    Write artifact descriptions, chart labels and explanations in English, regardless of the request or evidence language. Preserve dataset identifiers and original data values.
+
     Your task is to preprocess the event log data according to the user's request, using the provided API methods and any necessary data manipulation with pandas or numpy.
     {api_summary} \n
 
@@ -90,6 +92,7 @@ class AnalystPromptBuilder:
     Please use this information to generate a report, making sure to reference artifacts that are relevant to the current user request and to support your analysis with the provided visualizations and data summaries.
 
     REMEMBER:
+    - Write all report text in English, regardless of the request, evidence or previous response language. Preserve dataset identifiers and quoted source values.
     - YOUR GOAL is to answer the User Request: "{last_request}" by presenting and interpreting the provided artifacts. \n
     - Recall the output format: \n
     ```python
@@ -135,6 +138,8 @@ class AnalystPromptBuilder:
         )
         return f"""
     You are a process analyst.
+
+    Write all report text in English, regardless of the request or evidence language. Preserve dataset identifiers and quoted source values.
 
     CRITICAL INSTRUCTION:
     The Process Engineer has already executed the analysis. Your SOLE TASK is to compile the final report using the artifacts provided below.

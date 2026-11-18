@@ -30,13 +30,13 @@ def location(source_id, row, column, value, unit="number"):
     return {"source_id": source_id, "row": row, "column": column, "value": value, "evidence_unit": unit}
 
 
-def assessment(claims, status="respondida", available=None):
-    return {"claims": claims, "coverage": {"status": status, "explanation": "Evaluación de la cobertura."},
+def assessment(claims, status="answered", available=None):
+    return {"claims": claims, "coverage": {"status": status, "explanation": "Coverage assessment."},
             "available_evidence": available or []}
 
 
-def judged(claim_id, citation=None, status="respaldada"):
-    return {"id": claim_id, "status": status, "explanation": "Evaluación de la evidencia.", "location": citation}
+def judged(claim_id, citation=None, status="supported"):
+    return {"id": claim_id, "status": status, "explanation": "Evidence assessment.", "location": citation}
 
 
 class EvidenceCheckerTests(unittest.TestCase):
@@ -151,8 +151,8 @@ class EvidenceCheckerTests(unittest.TestCase):
             recommendation = "Implement automated pre-screening for New credit applications to reduce bottlenecks in early processing stages and shorten overall lead time."
         plan = {
             "parts": [
-                {"id": "duration", "question": "Comparar duración y proponer recomendaciones", "data_types": ["time"], "source_ids": [key]},
-                {"id": "acceptance", "question": "Comparar proporción de aceptados", "data_types": ["frequency"], "source_ids": [key]},
+                {"id": "duration", "question": "Compare durations and propose recommendations", "data_types": ["time"], "source_ids": [key]},
+                {"id": "acceptance", "question": "Compare acceptance proportions", "data_types": ["frequency"], "source_ids": [key]},
             ],
             "claims": [
                 {"id": "mean", "part_id": "duration", "text": snippets[0][0], "kind": "fact", "claimed_value": snippets[0][1]},
@@ -175,19 +175,48 @@ class EvidenceCheckerTests(unittest.TestCase):
                 result, respond = self.run_scripted(state, self.temp_responses(plan, key))
                 claims = {claim["id"]: claim for claim in result.claims}
                 for claim_id in ("mean", "rate"):
-                    self.assertEqual(claims[claim_id]["status"], "respaldada")
+                    self.assertEqual(claims[claim_id]["status"], "supported")
                     self.assertTrue(claims[claim_id]["numeric_check"]["confirmed"])
                     self.assertTrue(Path(claims[claim_id]["location"]["file_path"]).name.startswith("017_"))
                     self.assertEqual(claims[claim_id]["numeric_check"]["method"], "full_csv_cell_comparison")
-                self.assertEqual(claims["advice"]["status"], "no verificable")
-                self.assertEqual([part["status"] for part in result.question_parts], ["respondida", "respondida"])
-                self.assertEqual(result.confidence, "alta")
+                self.assertEqual(claims["advice"]["status"], "non_verifiable")
+                self.assertEqual([part["status"] for part in result.question_parts], ["answered", "answered"])
+                self.assertEqual(result.confidence, "high")
                 self.assertEqual(result.provenance, "inferred_order_no_context")
                 # Assessment calls only receive selected evidence for their part.
                 for call in respond.call_args_list[1:]:
                     payload = json.loads(call.args[0][1]["content"])
                     self.assertEqual([source["source_id"] for source in payload["evidence"]], [key])
                 self.assertNotIn("preview", json.loads(respond.call_args_list[0].args[0][1]["content"])["source_catalog"][0])
+
+    def test_agents_request_english_output_even_with_non_english_input(self):
+        from promoai.agents.prompt_builders import AnalystPromptBuilder, EngineerPromptBuilder
+        from promoai.agents.verifier import VerifierAgent
+
+        state = self.session()
+        state["user_request"][-1] = "Comparar los casos y explicar los resultados."
+        state["final_report"] = [{"type": "text", "content": "Datos del analisis anterior."}]
+        prompts = [
+            EngineerPromptBuilder().build(state, "API description")[0]["content"],
+            AnalystPromptBuilder._initial_message(state, "Contexto anterior"),
+            AnalystPromptBuilder._follow_up_message(state["user_request"][-1], "Contexto anterior"),
+            VerifierAgent._build_messages(state["user_request"][-1], state["final_report"])[0]["content"],
+            EvidenceCheckerAgent._plan_prompt(),
+            EvidenceCheckerAgent._assessment_prompt(),
+        ]
+        for prompt in prompts:
+            with self.subTest(prompt=prompt[:60]):
+                self.assertIn("in English", prompt)
+                self.assertNotIn("Use the user's language", prompt)
+                self.assertNotIn("same language as the user's request", prompt)
+
+        state = load_evidence_session(self.saved_q15_session(), 15)
+        plan, key = self.temp_plan(state, localized=True)
+        result, _ = self.run_scripted(state, self.temp_responses(plan, key))
+        self.assertEqual(result.claims[0]["text"], plan["claims"][0]["text"])
+        self.assertEqual(result.claims[0]["status"], "supported")
+        self.assertEqual(result.confidence, "high")
+        self.assertTrue(result.confidence_rule.startswith("High when"))
 
     def test_legacy_replay_excludes_failed_attempt_and_future_sources(self):
         directory = tempfile.TemporaryDirectory()
@@ -254,13 +283,13 @@ class EvidenceCheckerTests(unittest.TestCase):
         # The citation is a real cell, but it contradicts the report's New credit mean.
         responses[1]["claims"][0]["location"] = location(key, 1, "mean_duration_hours", "465.2103157594086")
         result, _ = self.run_scripted(state, responses)
-        self.assertEqual(result.claims[0]["status"], "contradicha")
+        self.assertEqual(result.claims[0]["status"], "contradicted")
         self.assertFalse(result.claims[0]["numeric_check"]["confirmed"])
-        self.assertEqual(result.confidence, "baja")
+        self.assertEqual(result.confidence, "low")
         responses[1]["claims"][0]["location"]["row"] = 100
         result, _ = self.run_scripted(state, responses)
-        self.assertEqual(result.claims[0]["status"], "sin respaldo")
-        self.assertEqual(result.confidence, "media")
+        self.assertEqual(result.claims[0]["status"], "unsupported")
+        self.assertEqual(result.confidence, "medium")
 
     def test_csv_lookup_finds_row_beyond_analyst_summary(self):
         state = self.session()
@@ -275,7 +304,7 @@ class EvidenceCheckerTests(unittest.TestCase):
                 "claims": [{"id": "c", "part_id": "p", "text": "Group g67 has 67 hours.", "kind": "fact", "claimed_value": "67"}]}
         lookup = {"lookups": [{"source_id": key, "filters": {"group": "g67"}, "columns": ["group", "hours"]}]}
         result, respond = self.run_scripted(state, [plan, lookup, assessment([judged("c", location(key, 68, "hours", "67"))])])
-        self.assertEqual(result.confidence, "alta")
+        self.assertEqual(result.confidence, "high")
         rows = json.loads(respond.call_args_list[-1].args[0][-1]["content"])["lookup_results"][0]
         self.assertEqual(rows["rows"], [{"row": 68, "values": {"group": "g67", "hours": "67"}}])
 
@@ -285,11 +314,11 @@ class EvidenceCheckerTests(unittest.TestCase):
         for available, expected in (([location(key, 2, "mean_duration_hours", "634.0673159951712")], "Analyst"), ([], "Engineer")):
             with self.subTest(expected=expected):
                 responses = self.temp_responses(plan, key)
-                responses[1]["coverage"]["status"] = "sin responder"
+                responses[1]["coverage"]["status"] = "unanswered"
                 responses[1]["available_evidence"] = available
                 result, _ = self.run_scripted(state, responses)
                 self.assertIn(expected, result.question_parts[0]["probable_cause"])
-                self.assertEqual(result.confidence, "baja")
+                self.assertEqual(result.confidence, "low")
 
     def test_preserves_context_ids_and_prior_artifacts_after_flush_and_replay(self):
         state = self.session()
@@ -325,8 +354,8 @@ class EvidenceCheckerTests(unittest.TestCase):
         plan = {"parts": [{"id": "p", "question": "Fitness", "data_types": ["conformance"], "source_ids": ["q1/context_0"]}],
                 "claims": [{"id": "c", "part_id": "p", "text": "Fitness is 0.92.", "kind": "fact", "claimed_value": "0.92"}]}
         result, _ = self.run_scripted(restored, [plan, assessment([judged("c", location("q1/context_0", 1, None, "0.92"))])])
-        self.assertEqual(result.claims[0]["status"], "respaldada")
-        self.assertEqual(result.confidence, "alta")
+        self.assertEqual(result.claims[0]["status"], "supported")
+        self.assertEqual(result.confidence, "high")
 
     def test_engineer_failed_attempt_is_excluded_without_altering_analyst_input(self):
         state = self.session()
@@ -380,7 +409,7 @@ final_event_log = api.event_log
         result, _ = self.run_scripted(state, responses)
         self.assertEqual(result.claims[0]["claimed_value"], "634.07")
         self.assertEqual(result.claims[0]["kind"], "fact")
-        self.assertEqual(result.claims[0]["status"], "contradicha")
+        self.assertEqual(result.claims[0]["status"], "contradicted")
 
     def test_standalone_entry_point_and_result_persistence(self):
         fixture_session = self.saved_q15_session()
@@ -394,7 +423,7 @@ final_event_log = api.event_log
             response_generator=Mock(side_effect=responses),
             persist=False,
         )
-        self.assertEqual(result.confidence, "alta")
+        self.assertEqual(result.confidence, "high")
         session = self.session()
         AgentRunRecorder().record_evidence_checker(session, result)
         path = next(Path(session["artifact_session_dir"]).glob("reports/*evidence_check_request_1.json"))
@@ -419,7 +448,7 @@ final_event_log = api.event_log
                     return Mock(execute=execute)
 
                 analyst_result = AnalystResult([{"type": "text", "content": "Completed report"}], "final_report=[]", [], ())
-                evidence_result = EvidenceCheckResult((), (), "baja", "rule", "recorded")
+                evidence_result = EvidenceCheckResult((), (), "low", "rule", "recorded")
                 workflow = PMaxWorkflow(CREDENTIALS,
                     engineer=agent("engineer", EngineerResult(session["event_log"], "", [])),
                     analyst=agent("analyst", analyst_result),
@@ -475,13 +504,15 @@ final_event_log = api.event_log
         self.assertFalse(app.toggle(key="pmax_response_validation_enabled").value)
         blocks = [
             {"type": "verification", "content": {"answers_question": True, "explanation": "Complete"}},
-            {"type": "evidence_check", "content": {"confidence": "alta", "claims": [], "question_parts": []}},
+            {"type": "evidence_check", "content": {"confidence": "high", "claims": [], "question_parts": []}},
         ]
         script = "from pmax import display_chat_message\ndisplay_chat_message('assistant', " + repr(blocks) + ")"
         rendered = AppTest.from_string(script).run(timeout=30)
         self.assertEqual(len(rendered.exception), 0)
         self.assertEqual(len(rendered.expander), 2)
         self.assertIn("EvidenceChecker", rendered.expander[1].label)
+        self.assertIn("Confidence: high", rendered.expander[1].label)
+        self.assertNotIn("Confianza", rendered.expander[1].label)
 
     def test_number_parser(self):
         for text, expected in (("634,07", "634.07"), ("51,21 %", "51.21"), ("5,925", "5925"), ("1.234,56", "1234.56"), ("0,5121", "0.5121")):

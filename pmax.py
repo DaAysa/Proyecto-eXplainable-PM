@@ -230,7 +230,7 @@ def display_chat_message(role: str, content: Union[str, List[Dict[str, str]]]):
                 elif b_type == "evidence_check":
                     check = b_val or {}
                     with st.expander(
-                        f"EvidenceChecker · Confianza {check.get('confidence', 'no disponible')}",
+                        f"EvidenceChecker · Confidence: {check.get('confidence', 'not available')}",
                         expanded=False,
                     ):
                         if check.get("unavailable"):
@@ -250,7 +250,7 @@ def display_chat_message(role: str, content: Union[str, List[Dict[str, str]]]):
                                     st.json(claim["numeric_check"], expanded=False)
                             st.caption(check.get("confidence_rule", ""))
                             if check.get("provenance") == "inferred_order_no_context":
-                                st.caption("Asociación inferida por orden de guardado. Contexto histórico no disponible.")
+                                st.caption("Association inferred from save order. Historical context is not available.")
         else:
             st.markdown(content)
 
@@ -402,15 +402,15 @@ def chat(llm_credentials: LLMConnection):
                         "⚠️ **Verifier:** verification was unavailable; the analyst report was preserved."
                     )
             if st.session_state.agent_state.get("evidence_check_enabled", False):
-                progress.write("**EvidenceChecker** revisando el respaldo de la respuesta.")
+                progress.write("**EvidenceChecker** checking the evidence supporting the response.")
                 try:
                     workflow.run_evidence_checker(
                         st.session_state.agent_state,
                         progress_callback=show_llm_progress,
                     )
-                    progress.write("**EvidenceChecker** revisión completada.")
+                    progress.write("**EvidenceChecker** review completed.")
                 except Exception as e:
-                    progress.write(f"**EvidenceChecker** no disponible. {e}")
+                    progress.write(f"**EvidenceChecker** unavailable. {e}")
             progress.update(label="Request completed", state="complete", expanded=True)
 
         report = st.session_state.agent_state["final_report"]
