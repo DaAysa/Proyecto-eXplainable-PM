@@ -13,8 +13,6 @@ from promoai.agents.engineer import EngineerAgent
 from promoai.agents.evidence import evidence_sources
 from promoai.agents.evidence_checker import (
     EvidenceCheckerAgent,
-    _displayed_numeric_value,
-    parse_number,
 )
 from promoai.agents.evidence_replay import check_saved_session, load_evidence_session
 from promoai.agents.persistence import AgentRunRecorder
@@ -164,7 +162,7 @@ class EvidenceCheckerTests(unittest.TestCase):
 
     def temp_responses(self, plan, key):
         return [plan,
-            assessment([judged("mean", location(key, 2, "mean_duration_hours", "634.0673")), judged("advice")]),
+            assessment([judged("mean", location(key, 2, "mean_duration_hours", "634.0673")), judged("advice", status="non_verifiable")]),
             assessment([judged("rate", location(key, 1, "accepted_proportion", "0.5120967741935484", "fraction"))])]
 
     def test_temp_request_15_acceptance_and_localized_numbers(self):
@@ -176,9 +174,8 @@ class EvidenceCheckerTests(unittest.TestCase):
                 claims = {claim["id"]: claim for claim in result.claims}
                 for claim_id in ("mean", "rate"):
                     self.assertEqual(claims[claim_id]["status"], "supported")
-                    self.assertTrue(claims[claim_id]["numeric_check"]["confirmed"])
+                    self.assertNotIn("numeric_check", claims[claim_id])
                     self.assertTrue(Path(claims[claim_id]["location"]["file_path"]).name.startswith("017_"))
-                    self.assertEqual(claims[claim_id]["numeric_check"]["method"], "full_csv_cell_comparison")
                 self.assertEqual(claims["advice"]["status"], "non_verifiable")
                 self.assertEqual([part["status"] for part in result.question_parts], ["answered", "answered"])
                 self.assertEqual(result.confidence, "high")
@@ -276,20 +273,31 @@ class EvidenceCheckerTests(unittest.TestCase):
         self.assertFalse(snapshot["artifacts"][0]["eligible"])
         self.assertTrue(snapshot["artifacts"][1]["eligible"])
 
-    def test_numeric_mismatch_and_invalid_location_lower_confidence(self):
+    def test_llm_verdicts_and_cited_values_are_preserved_without_python_comparison(self):
+        state = load_evidence_session(self.saved_q15_session(), 15)
+        plan, key = self.temp_plan(state)
+        for status in ("supported", "contradicted", "unsupported", "non_verifiable"):
+            with self.subTest(status=status):
+                responses = self.temp_responses(plan, key)
+                # Both the claim and the supplied citation differ from the CSV.
+                # Comparing them and issuing a verdict is exclusively the LLM's job.
+                verdict = responses[1]["claims"][0]
+                verdict.update(status=status, explanation="The model's comparison result.")
+                verdict["location"] = location(key, 1, "mean_duration_hours", "999")
+                result, _ = self.run_scripted(state, responses)
+                self.assertEqual(result.claims[0]["status"], status)
+                self.assertEqual(result.claims[0]["explanation"], verdict["explanation"])
+                self.assertEqual(result.claims[0]["location"]["value"], "999")
+                self.assertNotIn("numeric_check", result.claims[0])
+
+    def test_invalid_reference_is_rejected_without_reclassifying_a_claim(self):
         state = load_evidence_session(self.saved_q15_session(), 15)
         plan, key = self.temp_plan(state)
         responses = self.temp_responses(plan, key)
-        # The citation is a real cell, but it contradicts the report's New credit mean.
-        responses[1]["claims"][0]["location"] = location(key, 1, "mean_duration_hours", "465.2103157594086")
-        result, _ = self.run_scripted(state, responses)
-        self.assertEqual(result.claims[0]["status"], "contradicted")
-        self.assertFalse(result.claims[0]["numeric_check"]["confirmed"])
-        self.assertEqual(result.confidence, "low")
         responses[1]["claims"][0]["location"]["row"] = 100
-        result, _ = self.run_scripted(state, responses)
-        self.assertEqual(result.claims[0]["status"], "unsupported")
-        self.assertEqual(result.confidence, "medium")
+        with self.assertRaisesRegex(ValueError, "invalid evidence reference"):
+            self.run_scripted(state, responses)
+        self.assertEqual(responses[1]["claims"][0]["status"], "supported")
 
     def test_csv_lookup_finds_row_beyond_analyst_summary(self):
         state = self.session()
@@ -307,6 +315,8 @@ class EvidenceCheckerTests(unittest.TestCase):
         self.assertEqual(result.confidence, "high")
         rows = json.loads(respond.call_args_list[-1].args[0][-1]["content"])["lookup_results"][0]
         self.assertEqual(rows["rows"], [{"row": 68, "values": {"group": "g67", "hours": "67"}}])
+        self.assertIn("Compare numbers, units, percentages and rounding yourself", respond.call_args_list[-1].args[0][0]["content"])
+        self.assertNotIn("numeric_check", result.claims[0])
 
     def test_unanswered_part_probable_cause_uses_valid_evidence(self):
         state = load_evidence_session(self.saved_q15_session(), 15)
@@ -409,7 +419,7 @@ final_event_log = api.event_log
         result, _ = self.run_scripted(state, responses)
         self.assertEqual(result.claims[0]["claimed_value"], "634.07")
         self.assertEqual(result.claims[0]["kind"], "fact")
-        self.assertEqual(result.claims[0]["status"], "contradicted")
+        self.assertEqual(result.claims[0]["status"], "supported")
 
     def test_standalone_entry_point_and_result_persistence(self):
         fixture_session = self.saved_q15_session()
@@ -514,26 +524,7 @@ final_event_log = api.event_log
         self.assertIn("Confidence: high", rendered.expander[1].label)
         self.assertNotIn("Confianza", rendered.expander[1].label)
 
-    def test_number_parser(self):
-        for text, expected in (("634,07", "634.07"), ("51,21 %", "51.21"), ("5,925", "5925"), ("1.234,56", "1234.56"), ("0,5121", "0.5121")):
-            with self.subTest(text=text):
-                self.assertEqual(str(parse_number(text)[0]), expected)
-
-    def test_claim_value_accepts_gemini_format_normalization(self):
-        cases = (
-            ("total baseline of 6,173 distinct cases", "6173", "6,173"),
-            ("4,778 cases (77.40%)", "4778", "4,778"),
-            ("4,778 cases (77.40%)", "77.40", "77.40%"),
-            ("media 634,07 h", "634.07", "634,07"),
-        )
-        for text, claimed_value, expected in cases:
-            with self.subTest(text=text, claimed_value=claimed_value):
-                self.assertEqual(
-                    _displayed_numeric_value(text, claimed_value),
-                    expected,
-                )
-
-    def test_plan_restores_claim_value_format_from_report(self):
+    def test_plan_preserves_llm_claim_values_without_numeric_normalization(self):
         state = self.session()
         state["final_report"] = [{
             "type": "text",
@@ -568,8 +559,8 @@ final_event_log = api.event_log
             {},
             "There are 6,173 cases and acceptance is 77.40%.",
         )
-        self.assertEqual(plan["claims"][0]["claimed_value"], "6,173")
-        self.assertEqual(plan["claims"][1]["claimed_value"], "77.40%")
+        self.assertEqual(plan["claims"][0]["claimed_value"], "6173")
+        self.assertEqual(plan["claims"][1]["claimed_value"], "77.40")
 
     def test_plan_accepts_only_inline_markdown_differences(self):
         plan = {
@@ -589,7 +580,7 @@ final_event_log = api.event_log
         }
         report = "**Results:** `A_Cancelled` and `O_Cancelled` each occur in **4,778** cases."
         EvidenceCheckerAgent._validate_plan(plan, {}, report)
-        self.assertEqual(plan["claims"][0]["claimed_value"], "4,778")
+        self.assertEqual(plan["claims"][0]["claimed_value"], "4778")
 
         plan["claims"][0]["text"] = "A_Cancelled occurs in 9,999 cases"
         with self.assertRaisesRegex(ValueError, "exact report excerpt"):

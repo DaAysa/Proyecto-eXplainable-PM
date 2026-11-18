@@ -246,8 +246,6 @@ def display_chat_message(role: str, content: Union[str, List[Dict[str, str]]]):
                                 st.markdown(claim["explanation"])
                                 if claim.get("location"):
                                     st.json(claim["location"], expanded=False)
-                                if claim.get("numeric_check"):
-                                    st.json(claim["numeric_check"], expanded=False)
                             st.caption(check.get("confidence_rule", ""))
                             if check.get("provenance") == "inferred_order_no_context":
                                 st.caption("Association inferred from save order. Historical context is not available.")
