@@ -4,12 +4,15 @@ from promoai.agents.analyst import AnalystAgent
 from promoai.agents.contracts import (
     AnalystResult,
     EngineerResult,
+    EvidenceCheckResult,
     PMaxWorkflowResult,
     ProgressCallback,
     VerificationResult,
     WorkflowStep,
 )
 from promoai.agents.engineer import EngineerAgent
+from promoai.agents.evidence import apply_analyst_evidence, capture_analyst_evidence
+from promoai.agents.evidence_checker import EvidenceCheckerAgent
 from promoai.agents.persistence import AgentRunRecorder
 from promoai.agents.state import ProcessState
 from promoai.agents.verifier import VerifierAgent
@@ -27,10 +30,12 @@ class PMaxWorkflow:
         verifier: VerifierAgent | None = None,
         recorder: AgentRunRecorder | None = None,
         intermediate_steps: list[WorkflowStep] | None = None,
+        evidence_checker: EvidenceCheckerAgent | None = None,
     ):
         self.engineer = engineer or EngineerAgent(credentials)
         self.analyst = analyst or AnalystAgent(credentials)
         self.verifier = verifier or VerifierAgent(credentials)
+        self.evidence_checker = evidence_checker or EvidenceCheckerAgent(credentials)
         self.recorder = recorder or AgentRunRecorder()
         self.intermediate_steps = list(intermediate_steps or [])
 
@@ -54,15 +59,36 @@ class PMaxWorkflow:
         state: ProcessState,
         progress_callback: ProgressCallback | None = None,
     ) -> AnalystResult:
+        snapshot = capture_analyst_evidence(state)
         result = self.analyst.execute(state, progress_callback)
+        if result.evidence_snapshot is None:
+            apply_analyst_evidence(state, snapshot)
         if hasattr(state, "apply_analyst_result"):
             state.apply_analyst_result(result)
         else:
+            apply_analyst_evidence(state, result.evidence_snapshot)
             state["messages_ana"] = result.messages
             state["final_report"] = result.report
             state["sent_artifacts"].extend(result.sent_artifact_ids)
             state.flush_context()
         self.recorder.record_analyst(state, result)
+        return result
+
+    def run_evidence_checker(
+        self,
+        state: ProcessState,
+        progress_callback: ProgressCallback | None = None,
+    ) -> EvidenceCheckResult:
+        try:
+            result = self.evidence_checker.execute(state, progress_callback)
+            if hasattr(state, "apply_evidence_check_result"):
+                state.apply_evidence_check_result(result)
+            else:
+                state["evidence_check"] = result.as_dict()
+            self.recorder.record_evidence_checker(state, result)
+        except Exception as exc:
+            state["evidence_check"] = {"unavailable": True, "explanation": str(exc)}
+            raise
         return result
 
     def run_verifier(
@@ -90,11 +116,24 @@ class PMaxWorkflow:
         )
         analyst_result = self.run_analyst(state, progress_callback)
         verification_result = None
+        state["response_verification"] = None
+        state["evidence_check"] = None
         if state.get("response_validation_enabled", False):
-            verification_result = self.run_verifier(state, progress_callback)
+            try:
+                verification_result = self.run_verifier(state, progress_callback)
+            except Exception as exc:
+                state["response_verification"] = {"unavailable": True, "explanation": str(exc)}
+        evidence_result = None
+        if state.get("evidence_check_enabled", False):
+            try:
+                evidence_result = self.run_evidence_checker(state, progress_callback)
+            except Exception:
+                # A check failure must preserve the completed Analyst report.
+                pass
         return PMaxWorkflowResult(
             engineer=engineer_result,
             analyst=analyst_result,
             intermediate_results=intermediate_results,
             verification=verification_result,
+            evidence_check=evidence_result,
         )

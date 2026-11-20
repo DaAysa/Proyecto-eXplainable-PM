@@ -91,8 +91,8 @@ class VerifierAgent:
                     "Return only valid JSON with this schema: "
                     '{"answers_question": true, "explanation": "brief reason", '
                     '"missing_aspects": ["unanswered part"]}. '
-                    "Use the same language as the user's request for explanation and "
-                    "missing_aspects. If the request is fully answered, return an empty "
+                    "Write explanation and missing_aspects in English, regardless of the "
+                    "language of the request or evidence. If the request is fully answered, return an empty "
                     "missing_aspects list."
                 ),
             },

@@ -42,9 +42,36 @@ class EngineerAgent:
         api = PM4PYWrapper(state, LLMClient(self._credentials))
         messages = self._prompt_builder.build(state, api.get_API_summary())
         llm_args = self._llm_args(state, progress_callback)
+        state.setdefault("excluded_evidence_context", [])
+
+        def extract_with_evidence_tracking(response, args=None):
+            before = dict(state["saved_artifacts"])
+            context_start = len(state["context"])
+            try:
+                result = api.code_extraction(response, args)
+            except Exception:
+                changed = [
+                    path for path, value in state["saved_artifacts"].items()
+                    if path not in before or value is not before[path]
+                ]
+                state.setdefault("excluded_evidence_artifacts", []).extend(changed)
+                state["excluded_evidence_context"].extend(
+                    range(context_start, len(state["context"]))
+                )
+                raise
+            # A later successful attempt can legitimately replace the same path.
+            replaced = {
+                path for path, value in state["saved_artifacts"].items()
+                if path not in before or value is not before[path]
+            }
+            state["excluded_evidence_artifacts"] = [
+                path for path in state.get("excluded_evidence_artifacts", []) if path not in replaced
+            ]
+            return result
+
         code, event_log, updated_messages = self._result_generator(
             messages,
-            extraction_function=api.code_extraction,
+            extraction_function=extract_with_evidence_tracking,
             llm_name=self._credentials.llm_name,
             ai_provider=self._credentials.ai_provider,
             api_key=self._credentials.api_key,

@@ -35,6 +35,19 @@ class AgentRunRecorder:
 
     def record_analyst(self, state: ProcessState, result: AnalystResult) -> None:
         request_index = len(state["user_request"])
+        snapshot = result.evidence_snapshot or next(
+            (item for item in state.get("analyst_evidence", []) if item["request_index"] == request_index), None
+        )
+        if snapshot is not None:
+            evidence_path = write_json_artifact(
+                state["artifact_session_dir"], "evidence",
+                f"analyst_evidence_request_{request_index}", snapshot,
+            )
+            append_manifest_entry(
+                state["artifact_session_dir"], category="evidence", file_path=evidence_path,
+                description=f"Evidence delivered to Analyst for request {request_index}.",
+                artifact_type="analyst_evidence", extra={"request_index": request_index},
+            )
         self._record_code(
             state,
             "analyst",
@@ -76,6 +89,19 @@ class AgentRunRecorder:
             description=f"Response verification for request {request_index}.",
             artifact_type="response_verification",
             extra={"answers_question": result.answers_question},
+        )
+
+    @staticmethod
+    def record_evidence_checker(state: ProcessState, result) -> None:
+        request_index = state.get("evidence_request_index", len(state["user_request"]))
+        path = write_json_artifact(
+            state["artifact_session_dir"], "reports",
+            f"evidence_check_request_{request_index}", result.as_dict(),
+        )
+        append_manifest_entry(
+            state["artifact_session_dir"], category="reports", file_path=path,
+            description=f"Evidence check for request {request_index}.",
+            artifact_type="evidence_check", extra={"confidence": result.confidence},
         )
 
     @staticmethod

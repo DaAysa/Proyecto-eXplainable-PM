@@ -17,6 +17,7 @@ if TYPE_CHECKING:
     from promoai.agents.contracts import (
         AnalystResult,
         EngineerResult,
+        EvidenceCheckResult,
         VerificationResult,
     )
 
@@ -62,6 +63,7 @@ class PMaxSession(dict):
     source_log_path: str | None
     causal_enabled: bool
     response_validation_enabled: bool
+    evidence_check_enabled: bool
 
     def __init__(
         self,
@@ -71,8 +73,11 @@ class PMaxSession(dict):
         source_log_path: str | None = None,
         causal_enabled: bool = True,
         response_validation_enabled: bool = False,
+        evidence_check_enabled: bool = False,
     ):
         super().__init__()
+        if not isinstance(evidence_check_enabled, bool):
+            raise TypeError("evidence_check_enabled must be either True or False.")
         if not isinstance(causal_enabled, bool):
             raise TypeError("causal_enabled must be either True or False.")
         if not isinstance(response_validation_enabled, bool):
@@ -93,6 +98,9 @@ class PMaxSession(dict):
         self["causal_enabled"] = causal_enabled
         self["response_validation_enabled"] = response_validation_enabled
         self["response_verification"] = None
+        self["evidence_check_enabled"] = evidence_check_enabled
+        self["evidence_check"] = None
+        self["analyst_evidence"] = []
         self["log_abstraction"] = self.generate_log_abstraction()
         self["saved_artifacts"] = {}
         self["context"] = []
@@ -144,6 +152,9 @@ class PMaxSession(dict):
         self["messages_eng"] = result.messages
 
     def apply_analyst_result(self, result: "AnalystResult") -> None:
+        from promoai.agents.evidence import apply_analyst_evidence
+
+        apply_analyst_evidence(self, result.evidence_snapshot)
         self["messages_ana"] = result.messages
         self["final_report"] = result.report
         self["sent_artifacts"].extend(result.sent_artifact_ids)
@@ -151,6 +162,9 @@ class PMaxSession(dict):
 
     def apply_verification_result(self, result: "VerificationResult") -> None:
         self["response_verification"] = result.as_dict()
+
+    def apply_evidence_check_result(self, result: "EvidenceCheckResult") -> None:
+        self["evidence_check"] = result.as_dict()
 
     def generate_log_abstraction(self):
         df = self["event_log"]
@@ -202,6 +216,7 @@ class PMaxSession(dict):
 
     def flush_context(self):
         self["context"] = []
+        self["excluded_evidence_context"] = []
 
 
 # Backwards-compatible name used by PM4PYWrapper and external callers.
