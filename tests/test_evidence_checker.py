@@ -290,14 +290,42 @@ class EvidenceCheckerTests(unittest.TestCase):
                 self.assertEqual(result.claims[0]["location"]["value"], "999")
                 self.assertNotIn("numeric_check", result.claims[0])
 
-    def test_invalid_reference_is_rejected_without_reclassifying_a_claim(self):
+    def test_invalid_reference_is_corrected_without_reclassifying_a_claim(self):
         state = load_evidence_session(self.saved_q15_session(), 15)
         plan, key = self.temp_plan(state)
         responses = self.temp_responses(plan, key)
         responses[1]["claims"][0]["location"]["row"] = 100
+        corrected = copy.deepcopy(responses[1])
+        corrected["claims"][0]["location"]["row"] = 2
+        responses.insert(2, corrected)
+        result, respond = self.run_scripted(state, responses)
+        self.assertEqual(result.claims[0]["location"]["row"], 2)
+        self.assertEqual(responses[1]["claims"][0]["status"], "supported")
+        correction = json.loads(respond.call_args_list[2].args[0][-1]["content"])
+        self.assertIn("row 100 is outside the valid range 1-2", correction["validation_error"])
+        self.assertEqual(correction["reference_constraints"][0]["valid_rows"], "1-2")
+
+    def test_invalid_reference_fails_after_three_assessment_attempts(self):
+        state = load_evidence_session(self.saved_q15_session(), 15)
+        plan, key = self.temp_plan(state)
+        invalid = self.temp_responses(plan, key)[1]
+        invalid["claims"][0]["location"]["row"] = 100
+        responses = [plan, invalid, copy.deepcopy(invalid), copy.deepcopy(invalid)]
         with self.assertRaisesRegex(ValueError, "invalid evidence reference"):
             self.run_scripted(state, responses)
-        self.assertEqual(responses[1]["claims"][0]["status"], "supported")
+        self.assertEqual(invalid["claims"][0]["status"], "supported")
+
+    def test_non_verbatim_claim_is_corrected_before_assessment(self):
+        state = load_evidence_session(self.saved_q15_session(), 15)
+        plan, key = self.temp_plan(state)
+        invalid = copy.deepcopy(plan)
+        invalid["claims"][0]["text"] = "New credit mean duration is 634.07 hours."
+        responses = [invalid, *self.temp_responses(plan, key)]
+        result, respond = self.run_scripted(state, responses)
+        self.assertEqual(result.claims[0]["text"], plan["claims"][0]["text"])
+        correction = json.loads(respond.call_args_list[1].args[0][-1]["content"])
+        self.assertIn("exact report excerpt", correction["validation_error"])
+        self.assertIn("contiguous exact excerpt", correction["instruction"])
 
     def test_csv_lookup_finds_row_beyond_analyst_summary(self):
         state = self.session()
@@ -401,12 +429,20 @@ final_event_log = api.event_log
         plan, key = self.temp_plan(state)
         bad_source = copy.deepcopy(plan)
         bad_source["parts"][0]["source_ids"] = ["q999/artifact_0"]
-        for response in ("not json", "[]", {"parts": []}, bad_source):
+        for response in ("not json", "[]"):
             with self.subTest(response=response):
                 with self.assertRaises(ValueError):
                     self.run_scripted(state, [response])
+        for response in ({"parts": []}, bad_source):
+            with self.subTest(response=response):
+                with self.assertRaises(ValueError):
+                    self.run_scripted(
+                        state,
+                        [response, copy.deepcopy(response), copy.deepcopy(response)],
+                    )
         with self.assertRaises(ValueError):
-            self.run_scripted(state, [plan, assessment([])])
+            invalid = assessment([])
+            self.run_scripted(state, [plan, invalid, invalid, invalid])
         with self.assertRaises(ValueError):
             self.run_scripted(state, [plan, {"lookups": [{"source_id": "q999/artifact_0"}]}])
 
@@ -585,6 +621,25 @@ final_event_log = api.event_log
         plan["claims"][0]["text"] = "A_Cancelled occurs in 9,999 cases"
         with self.assertRaisesRegex(ValueError, "exact report excerpt"):
             EvidenceCheckerAgent._validate_plan(plan, {}, report)
+
+    def test_plan_accepts_latex_math_delimiters_as_presentation_markup(self):
+        plan = {
+            "parts": [{
+                "id": "p1",
+                "question": "Case duration quartiles",
+                "data_types": ["time"],
+                "source_ids": [],
+            }],
+            "claims": [{
+                "id": "c1",
+                "part_id": "p1",
+                "text": "First Quartile (Q_1): 436.985 hours",
+                "kind": "fact",
+                "claimed_value": "436.985",
+            }],
+        }
+        report = "- **First Quartile ($Q_1$):** 436.985 hours"
+        EvidenceCheckerAgent._validate_plan(plan, {}, report)
 
 
 if __name__ == "__main__":
