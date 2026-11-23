@@ -539,7 +539,7 @@ final_event_log = api.event_log
             self.assertEqual(payload["temperature"], 0)
             self.assertNotIn("temperature_override", payload)
 
-    def test_ui_has_independent_toggle_and_separate_chat_block(self):
+    def test_ui_has_independent_toggle_and_reference_evidence_format(self):
         from streamlit.testing.v1 import AppTest
 
         app = AppTest.from_string("from pmax import run_page\nrun_page()").run(timeout=30)
@@ -550,15 +550,46 @@ final_event_log = api.event_log
         self.assertFalse(app.toggle(key="pmax_response_validation_enabled").value)
         blocks = [
             {"type": "verification", "content": {"answers_question": True, "explanation": "Complete"}},
-            {"type": "evidence_check", "content": {"confidence": "high", "claims": [], "question_parts": []}},
+            {
+                "type": "evidence_check",
+                "content": {
+                    "confidence": "medium",
+                    "question_parts": [{
+                        "question": "How many cases contain activity A?",
+                        "status": "answered",
+                        "explanation": "The response includes the requested count.",
+                    }],
+                    "claims": [{
+                        "text": "Activity A occurs in 42 cases.",
+                        "kind": "fact",
+                        "status": "supported",
+                        "explanation": "The saved table contains the same count.",
+                        "location": {
+                            "source_id": "q1/artifact_0",
+                            "row": 1,
+                            "column": "case_count",
+                            "value": "42",
+                        },
+                    }],
+                },
+            },
         ]
         script = "from pmax import display_chat_message\ndisplay_chat_message('assistant', " + repr(blocks) + ")"
         rendered = AppTest.from_string(script).run(timeout=30)
         self.assertEqual(len(rendered.exception), 0)
         self.assertEqual(len(rendered.expander), 2)
-        self.assertIn("EvidenceChecker", rendered.expander[1].label)
-        self.assertIn("Confidence: high", rendered.expander[1].label)
+        self.assertEqual(
+            rendered.expander[1].label,
+            "🟡 Evidence check: Medium confidence",
+        )
         self.assertNotIn("Confianza", rendered.expander[1].label)
+        rendered_text = "\n".join(item.value for item in rendered.markdown)
+        self.assertIn("#### Question coverage", rendered_text)
+        self.assertIn("**answered** — How many cases contain activity A?", rendered_text)
+        self.assertIn("#### Claims", rendered_text)
+        self.assertIn("**supported** — Activity A occurs in 42 cases.", rendered_text)
+        captions = "\n".join(item.value for item in rendered.caption)
+        self.assertIn("Evidence: artifact_0, row 1, column case_count, value 42", captions)
 
     def test_plan_preserves_llm_claim_values_without_numeric_normalization(self):
         state = self.session()

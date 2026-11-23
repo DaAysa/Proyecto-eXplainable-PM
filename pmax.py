@@ -164,6 +164,58 @@ def export_messages_to_pdf(messages) -> bytes:
     return None if pisa_status.err else pdf_buffer.getvalue()
 
 
+def _evidence_check_heading(check: dict) -> str:
+    """Build the compact, confidence-led heading used by evidence checks."""
+    confidence = str(check.get("confidence") or "not available").strip().lower()
+    presentations = {
+        "high": ("🟢", "High confidence"),
+        "medium": ("🟡", "Medium confidence"),
+        "low": ("🔴", "Low confidence"),
+        "not available": ("⚪", "Confidence not available"),
+    }
+    icon, label = presentations.get(
+        confidence, ("⚪", f"{confidence.capitalize()} confidence")
+    )
+    return f"{icon} Evidence check: {label}"
+
+
+def _evidence_check_summary(check: dict) -> str:
+    """Summarize existing checker results without reassessing their statuses."""
+    parts = check.get("question_parts", [])
+    factual_claims = [
+        claim for claim in check.get("claims", []) if claim.get("kind") == "fact"
+    ]
+    if not parts and not factual_claims:
+        return "The response was checked against the available evidence."
+
+    fragments = []
+    if factual_claims:
+        supported = sum(
+            claim.get("status") == "supported" for claim in factual_claims
+        )
+        fragments.append(
+            f"{supported} of {len(factual_claims)} factual claims are supported"
+        )
+    if parts:
+        answered = sum(part.get("status") == "answered" for part in parts)
+        fragments.append(f"{answered} of {len(parts)} question parts are answered")
+    return "Evidence summary: " + ", and ".join(fragments) + "."
+
+
+def _format_evidence_location(location: dict) -> str:
+    """Render a validated evidence reference as a readable inline citation."""
+    source = location.get("artifact_id") or location.get("source_id")
+    if isinstance(source, str):
+        source = source.rsplit("/", 1)[-1]
+
+    details = [str(source)] if source else []
+    for key in ("row", "column", "value"):
+        value = location.get(key)
+        if value is not None:
+            details.append(f"{key} {value}")
+    return "Evidence: " + ", ".join(details)
+
+
 def display_chat_message(role: str, content: Union[str, List[Dict[str, str]]]):
     """Renders either a simple string or structured chat blocks."""
     with st.chat_message(role):
@@ -230,25 +282,45 @@ def display_chat_message(role: str, content: Union[str, List[Dict[str, str]]]):
                 elif b_type == "evidence_check":
                     check = b_val or {}
                     with st.expander(
-                        f"EvidenceChecker · Confidence: {check.get('confidence', 'not available')}",
+                        _evidence_check_heading(check),
                         expanded=False,
                     ):
                         if check.get("unavailable"):
                             st.markdown(check.get("explanation", ""))
                         else:
+                            st.markdown(_evidence_check_summary(check))
+
+                            st.markdown("#### Question coverage")
                             for part in check.get("question_parts", []):
-                                st.markdown(f"**{part['question']}** — {part['status']}")
-                                st.markdown(part["explanation"])
+                                st.markdown(
+                                    f"- **{part['status']}** — {part['question']}"
+                                )
+                                if part.get("explanation"):
+                                    st.caption(part["explanation"])
                                 if part.get("probable_cause"):
-                                    st.markdown(part["probable_cause"])
+                                    st.caption(
+                                        f"Probable cause: {part['probable_cause']}"
+                                    )
+
+                            st.markdown("#### Claims")
                             for claim in check.get("claims", []):
                                 st.markdown(f"- **{claim['status']}** — {claim['text']}")
-                                st.markdown(claim["explanation"])
+                                if claim.get("explanation"):
+                                    st.caption(claim["explanation"])
                                 if claim.get("location"):
-                                    st.json(claim["location"], expanded=False)
-                            st.caption(check.get("confidence_rule", ""))
+                                    st.caption(
+                                        _format_evidence_location(claim["location"])
+                                    )
+
+                            if check.get("confidence_rule"):
+                                st.caption(
+                                    f"Confidence rule: {check['confidence_rule']}"
+                                )
                             if check.get("provenance") == "inferred_order_no_context":
-                                st.caption("Association inferred from save order. Historical context is not available.")
+                                st.caption(
+                                    "Association inferred from save order. Historical context "
+                                    "is not available."
+                                )
         else:
             st.markdown(content)
 
