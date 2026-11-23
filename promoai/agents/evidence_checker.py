@@ -640,6 +640,8 @@ Keep JSON keys and status values exactly as specified. Preserve dataset identifi
             temperature=0,
             temperature_override=0,
             artifact_session_dir=state["artifact_session_dir"],
+            agent_name=self.name,
+            progress_callback=callback,
         )
         self._notify(
             callback,

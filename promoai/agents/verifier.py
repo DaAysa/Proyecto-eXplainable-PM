@@ -43,6 +43,8 @@ class VerifierAgent:
         )
         llm_args = dict(self._credentials.args or {})
         llm_args["artifact_session_dir"] = state["artifact_session_dir"]
+        llm_args["agent_name"] = self.name
+        llm_args["progress_callback"] = progress_callback
 
         self._notify(
             progress_callback,

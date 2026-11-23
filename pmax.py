@@ -329,6 +329,12 @@ def chat(llm_credentials: LLMConnection):
                     progress.write(
                         f"🔁 **{agent}:** request {attempt} could not be used; asking the LLM to correct it."
                     )
+                elif event["event"] == "request_retry":
+                    progress.write(
+                        f"⏳ **{agent} → LLM:** temporary service error; retrying the same "
+                        f"request in {event['wait_seconds']:.1f}s "
+                        f"(service attempt {attempt}/{event['total_attempts']})."
+                    )
                 elif event["event"] == "attempt_completed":
                     progress.write(f"✅ **{agent}:** request {attempt} completed successfully.")
                 elif event["event"] == "request_failed":

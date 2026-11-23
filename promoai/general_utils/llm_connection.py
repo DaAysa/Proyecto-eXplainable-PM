@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import json
 import logging
+import random
 import re
+import time
 from pathlib import Path
 
 from typing import Any, Callable, List, Optional, Tuple, TypeVar
@@ -22,6 +24,8 @@ from promoai.general_utils.artifact_store import (
 from promoai.prompting.prompt_engineering import ERROR_MESSAGE_FOR_MODEL_GENERATION
 
 T = TypeVar("T")
+LLM_REQUEST_ATTEMPTS = 4
+LLM_RETRY_INITIAL_DELAY = 2.0
 INTERNAL_LLM_ARG_KEYS = {
     "artifact_session_dir",
     "progress_callback",
@@ -514,6 +518,45 @@ def query_llm(
     ai_provider: str,
     llm_args: Optional[dict] = None,
 ) -> str:
+    """Retry transient service failures without changing the conversation/model.
+
+    These attempts are separate from the agents' generated-code corrections.
+    Keep every network attempt in the same artifact session.
+    """
+    effective_args = dict(llm_args or {})
+    effective_args["artifact_session_dir"] = _resolve_trace_session_dir(llm_args)
+    for attempt in range(1, LLM_REQUEST_ATTEMPTS + 1):
+        try:
+            return _query_llm_once(
+                conversation, api_key, llm_name, ai_provider, effective_args
+            )
+        except BaseLLMError as exc:
+            if not exc.retryable or attempt == LLM_REQUEST_ATTEMPTS:
+                raise
+            delay = LLM_RETRY_INITIAL_DELAY * (2 ** (attempt - 1)) + random.uniform(0, 1)
+            _report_llm_progress(
+                effective_args,
+                "request_retry",
+                attempt=attempt + 1,
+                total_attempts=LLM_REQUEST_ATTEMPTS,
+                wait_seconds=delay,
+                provider=ai_provider,
+                model=llm_name,
+            )
+            logger.warning(
+                "%s / %s temporarily unavailable; retrying request (%s/%s) in %.1fs",
+                ai_provider, llm_name, attempt + 1, LLM_REQUEST_ATTEMPTS, delay,
+            )
+            time.sleep(delay)
+
+
+def _query_llm_once(
+    conversation: List[dict[str, str]],
+    api_key: str,
+    llm_name: str,
+    ai_provider: str,
+    llm_args: Optional[dict] = None,
+) -> str:
     trace_session_dir = _resolve_trace_session_dir(llm_args)
     temperature_args = {}
     # Native SDKs historically ignore provider args. Explicit overrides let
@@ -598,7 +641,7 @@ def generate_result_with_error_handling(
     trace_session_dir = internal_args.get(
         "artifact_session_dir"
     ) or create_analysis_session("llm")
-    effective_llm_args = dict(provider_args)
+    effective_llm_args = {**provider_args, **internal_args}
     effective_llm_args["artifact_session_dir"] = trace_session_dir
     error_history = []
     total_iterations = max_iterations + additional_iterations
@@ -822,7 +865,13 @@ def generate_response_with_history_google(
         if not api_key:
             raise Exception("api key not provided")
 
-        client = genai.Client(api_key=api_key)
+        # Retries are handled by query_llm so their limit and progress are visible.
+        client = genai.Client(
+            api_key=api_key,
+            http_options=genai.types.HttpOptions(
+                retry_options=genai.types.HttpRetryOptions(attempts=1)
+            ),
+        )
         system_instruction, contents = _to_gemini_contents_and_system(
             conversation_history
         )
@@ -904,7 +953,28 @@ def generate_response_with_history_google(
                 response_payload={"request": request_payload},
                 error=str(e),
             )
+        if isinstance(e, BaseLLMError):
+            raise
         text = str(e)
+        status = getattr(e, "code", None)
+        # Prefer SDK status codes: a 503 message can also mention "model not
+        # available", which must not be mistaken for an invalid model name.
+        if status in (500, 502, 503, 504):
+            raise ServiceUnavailableError(
+                _user_message("unavailable"), retryable=True, details=_redact(text)
+            ) from e
+        if status in (401, 403):
+            raise AuthError(_user_message("auth"), retryable=False, details=_redact(text)) from e
+        if status in (400, 404, 422):
+            raise BadRequestError(
+                _user_message("bad_request"), retryable=False, details=_redact(text)
+            ) from e
+        if status == 429:
+            raise RateLimitError(
+                _user_message("rate_limit"), retryable=True, details=_redact(text)
+            ) from e
+        if status == 408:
+            raise TimeoutError(_user_message("timeout"), retryable=True, details=_redact(text)) from e
         lower = text.lower()
         if "api key" in lower or "permission" in lower or "unauthorized" in lower:
             raise AuthError(_user_message("auth"), retryable=False, details=text)
