@@ -58,6 +58,14 @@ class LocalEventLogFile:
         return self._bytes
 
 
+def _selected_option(name: str, widget_key: str) -> bool:
+    """Value chosen in the setup form (kept after the form disappears)."""
+    selected = st.session_state.get("pmax_selected_options") or {}
+    if name in selected:
+        return bool(selected[name])
+    return bool(st.session_state.get(widget_key, True))
+
+
 def persist_uploaded_event_log(uploaded_file) -> tuple[str, str, pd.DataFrame]:
     artifact_session_dir = create_analysis_session("pmax")
     file_bytes = uploaded_file.read()
@@ -393,13 +401,15 @@ def chat(llm_credentials: LLMConnection):
                 event_log=st.session_state["uploaded_log"],
                 artifact_session_dir=artifact_session_dir,
                 source_log_path=st.session_state.get("uploaded_log_path"),
-                causal_enabled=st.session_state.get(
-                    "pmax_causal_enabled", True
+                causal_enabled=_selected_option(
+                    "causal", "pmax_causal_enabled"
                 ),
-                response_validation_enabled=st.session_state.get(
-                    "pmax_response_validation_enabled", True
+                response_validation_enabled=_selected_option(
+                    "response_validation", "pmax_response_validation_enabled"
                 ),
-                evidence_check_enabled=st.session_state.get("pmax_evidence_check_enabled", True),
+                evidence_check_enabled=_selected_option(
+                    "evidence_check", "pmax_evidence_check_enabled"
+                ),
             )
         else:
             # Add the user request to the agent state
@@ -656,6 +666,18 @@ def run_page():
             )
             submission_button = st.form_submit_button(label="Start Analysis")
             if submission_button:
+                # The toggles are not rendered once setup is complete, so Streamlit
+                # drops their widget state on the next run and they fall back to
+                # True. Keep the values chosen at submit time in a separate key.
+                st.session_state["pmax_selected_options"] = {
+                    "causal": st.session_state.get("pmax_causal_enabled", True),
+                    "response_validation": st.session_state.get(
+                        "pmax_response_validation_enabled", True
+                    ),
+                    "evidence_check": st.session_state.get(
+                        "pmax_evidence_check_enabled", True
+                    ),
+                }
                 if "llm_credentials" not in st.session_state:
                     st.error(
                         body="Please complete the setup on the main page!", icon="⚠️"

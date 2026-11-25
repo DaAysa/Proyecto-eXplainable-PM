@@ -109,6 +109,10 @@ def sidebar_info():
                     del st.session_state["pmax_causal_enabled"]
                 if "pmax_response_validation_enabled" in st.session_state:
                     del st.session_state["pmax_response_validation_enabled"]
+                if "pmax_evidence_check_enabled" in st.session_state:
+                    del st.session_state["pmax_evidence_check_enabled"]
+                if "pmax_selected_options" in st.session_state:
+                    del st.session_state["pmax_selected_options"]
                 st.session_state["resettable"] = False
                 st.rerun()
 
