@@ -32,6 +32,32 @@ def get_active_artifact_session_dir() -> str | None:
     return st.session_state.get("artifact_session_dir")
 
 
+def _dev_mode_enabled() -> bool:
+    """True when the local-path test mode is on (env var or .pmax_dev_log_path.txt)."""
+    if os.environ.get("PMAX_DEV_LOG_PATH", "").strip():
+        return True
+    return os.path.isfile(
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), ".pmax_dev_log_path.txt")
+    )
+
+
+class LocalEventLogFile:
+    """Dev/test helper: mimics Streamlit's UploadedFile for a log read from disk.
+
+    Only used when the PMAX_DEV_LOG_PATH environment variable is set.
+    """
+
+    def __init__(self, path: str):
+        self.path = path
+        self.name = os.path.basename(path)
+        with open(path, "rb") as f:
+            self._bytes = f.read()
+        self.size = len(self._bytes)
+
+    def read(self) -> bytes:
+        return self._bytes
+
+
 def persist_uploaded_event_log(uploaded_file) -> tuple[str, str, pd.DataFrame]:
     artifact_session_dir = create_analysis_session("pmax")
     file_bytes = uploaded_file.read()
@@ -538,6 +564,14 @@ def chat(llm_credentials: LLMConnection):
         st.session_state.messages.append(
             {"role": "assistant", "content": assistant_content}
         )
+        # Dev/test only: save PMAx's own PDF export of the chat into the session.
+        if _dev_mode_enabled():
+            try:
+                pdf_bytes = export_messages_to_pdf(st.session_state.messages)
+                if pdf_bytes:
+                    persist_pdf_report(pdf_bytes)
+            except Exception as e:
+                print(f"[pmax dev] PDF export failed: {e}")
         resettable = "messages" in st.session_state and len(
             st.session_state["messages"]
         )
@@ -585,6 +619,20 @@ def run_page():
                 type=["xes", "gz", "csv"],
                 max_upload_size=MAX_FILE_SIZE,
             )
+            dev_log_default = os.environ.get("PMAX_DEV_LOG_PATH", "").strip()
+            dev_log_file = os.path.join(
+                os.path.dirname(os.path.abspath(__file__)), ".pmax_dev_log_path.txt"
+            )
+            if not dev_log_default and os.path.isfile(dev_log_file):
+                with open(dev_log_file, encoding="utf-8-sig") as f:
+                    dev_log_default = f.read().strip()
+            dev_log_path = ""
+            if dev_log_default:
+                dev_log_path = st.text_input(
+                    "Dev: load event log from local path (used when no file is uploaded)",
+                    value=dev_log_default,
+                    key="pmax_dev_log_path",
+                )
             st.toggle(
                 "Enable causal analysis",
                 key="pmax_causal_enabled",
@@ -613,6 +661,12 @@ def run_page():
                         body="Please complete the setup on the main page!", icon="⚠️"
                     )
                     return
+                if uploaded_log is None and dev_log_path.strip():
+                    try:
+                        uploaded_log = LocalEventLogFile(dev_log_path.strip())
+                    except Exception as e:
+                        st.error(body=f"Could not read local event log: {e}", icon="⚠️")
+                        return
                 if uploaded_log is None:
                     st.error(body="No file is selected!", icon="⚠️")
                     return
